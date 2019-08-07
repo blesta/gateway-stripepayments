@@ -1,0 +1,10 @@
+{
+    "name": "blesta/stripe3ds",
+    "description": "Stripe",
+    "license": "proprietary",
+    "type": "blesta-gateway-merchant",
+    "require": {
+        "blesta/composer-installer": "~1.0",
+        "stripe/stripe-php": "~6.40"
+    }
+}

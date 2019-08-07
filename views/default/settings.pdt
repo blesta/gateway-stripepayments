@@ -1,0 +1,17 @@
+
+	<ul>
+		<li>
+			<?php
+            $this->Form->label($this->_('Stripe3ds.publishable_key', true));
+            $this->Form->fieldText('publishable_key', $this->Html->ifSet($meta['publishable_key']));
+            ?>
+			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('Stripe3ds.tooltip_publishable_key');?></div></span>
+		</li>
+		<li>
+			<?php
+            $this->Form->label($this->_('Stripe3ds.secret_key', true));
+            $this->Form->fieldText('secret_key', $this->Html->ifSet($meta['secret_key']));
+            ?>
+			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('Stripe3ds.tooltip_secret_key');?></div></span>
+		</li>
+	</ul>
