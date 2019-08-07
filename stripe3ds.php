@@ -216,9 +216,12 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             $this->base_url . 'setup_intents - create'
         );
 
-        ###
-        # TODO update this to use payment_intents
-        ###
+        // Ideally we would set up a PaymentIntent at this point as well. Unfortunately we may not know the
+        // payment amount at the time the CC info is being confirmed. For example when we make a payment
+        // through the admin interface we enter card details, then select invoices to pay, and finally
+        // reviewing and confirming. We would only know the amount being paid in that third step. It is
+        // possible that we should add another method call at that point to notify the gateway, but that
+        // seems pretty specific to Stripe PaymentIntents
 
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
@@ -231,52 +234,8 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
      */
     public function processCc(array $card_info, $amount, array $invoice_amounts = null)
     {
-        Loader::loadModels($this, ['Invoices']);
-
-        // Create a list of IDs for the invoices being paid
-        $id_codes = [];
-        foreach ($invoice_amounts as $invoice_amount) {
-            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
-            $id_codes[] = $invoice->id_code;
-        }
-        $description = Language::_('Stripe_gateway.charge_description', true, implode(', ', $id_codes));
-
-        // Charge the given Payment Method through Stripe
-        $charge = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
-            'currency' => $this->ifSet($this->currency, 'usd'),
-            'payment_method' => $card_info['stripe_payment_method'],
-            'description' => $description,
-            'confirm' => true,
-            'off_session' => false
-        ];
-        ###
-        # TODO Figure out a good way to set this off_session parameter
-        ###
-
-        $payment = $this->handleApiRequest(
-            ['Stripe\PaymentIntent', 'create'],
-            [$charge],
-            $this->base_url . 'payment_intents - create'
-        );
-        $errors = $this->Input->errors();
-
-        // Get the status from the payment response
-        $status = 'error';
-        if (isset($payment->error) && $this->ifSet($payment->error->code) == 'card_declined') {
-            $status = 'declined';
-        } elseif (!isset($payment->error) && empty($errors)) {
-            $status = 'approved';
-        } else {
-            $message = $this->ifSet($payment->error->message);
-        }
-
-        return [
-            'status' => $status,
-            'reference_id' => null,
-            'transaction_id' => $this->ifSet($payment->id, null),
-            'message' => $this->ifSet($message)
-        ];
+        // The process is the same since both use payment methods and payment intents
+        return $this->processStoredCc(null, $card_info['stripe_payment_method'], $amount, $invoice_amounts);
     }
 
     /**
@@ -417,15 +376,17 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
 
         // Attempt to update the customer's card
         $errors = [];
-        $response = new stdClass();
+        $loggable_response = [];
         try {
             $response = call_user_func_array($api_method, $params);
+
+            $loggable_response = $response->jsonSerialize();
         } catch (Stripe_InvalidRequestError $exception) {
             if (isset($exception->json_body)) {
-                $response = $exception->json_body;
+                $loggable_response = $exception->json_body;
                 $errors = [
-                    $response['error']['type'] => [
-                        'error' => $response['error']['message']
+                    $loggable_response['error']['type'] => [
+                        'error' => $loggable_response['error']['message']
                     ]
                 ];
             } else {
@@ -434,10 +395,10 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             }
         } catch (Stripe_CardError $exception) {
             if (isset($exception->json_body)) {
-                $response = $exception->json_body;
+                $loggable_response = $exception->json_body;
                 $errors = [
-                    $response['error']['type'] => [
-                        $response['error']['code'] => $response['error']['message']
+                    $loggable_response['error']['type'] => [
+                        $loggable_response['error']['code'] => $response['error']['message']
                     ]
                 ];
             } else {
@@ -448,10 +409,10 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             if (isset($exception->json_body)) {
                 // Don't use the actual error (as it may contain an API key, albeit invalid),
                 // rather a general auth error
-                $response = $exception->json_body;
+                $loggable_response = $exception->json_body;
                 $errors = [
-                    $response->error['type'] => [
-                        'auth_error' => Language::_('Stripe_gateway.!error.auth', true)
+                    $loggable_response['error']['type'] => [
+                        'auth_error' => Language::_('Stripe3ds.!error.auth', true)
                     ]
                 ];
             } else {
@@ -460,11 +421,8 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             }
         } catch (Exception $e) {
             // Any other exception, including Stripe_ApiError
-            var_dump($e->getMessage());
-            ###
-            # TODO Store this error somewhere visible for debbuging
-            ###
             $errors = $this->getCommonError('general');
+            $loggable_response = ['error' => $e->getMessage()];
         }
 
         // Set any errors
@@ -473,7 +431,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
         }
 
         // Log the request
-        $this->logRequest($log_url, is_array($params) ? $params : [$params], $this->objectToArray($response));
+        $this->logRequest($log_url, is_array($params) ? $params : [$params], $loggable_response);
 
         return empty($errors) ? $response : false;
     }
@@ -496,10 +454,10 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
 
         // Detach the Payment Method from it's associated Stripe customer
         $this->handleApiRequest(
-            function ($customer_id, $card) {
+            function ($card) {
                 return $card->detach();
             },
-            [$this->ifSet($client_reference_id), $card],
+            [$card],
             $this->base_url . 'payment_methods - detach'
         );
 
@@ -524,7 +482,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
             $id_codes[] = $invoice->id_code;
         }
-        $description = Language::_('Stripe_gateway.charge_description', true, implode(', ', $id_codes));
+        $description = Language::_('Stripe3ds.charge_description', true, implode(', ', $id_codes));
 
         // Charge the given Payment Method through Stripe
         $charge = [
