@@ -16,7 +16,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
     /**
      * @var string The version of this gateway
      */
-    private static $version = '1.0.0';
+    private static $version = '0.1.0';
     /**
      * @var string The authors of this gateway
      */
