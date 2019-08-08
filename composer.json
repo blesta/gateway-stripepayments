@@ -1,5 +1,5 @@
 {
-    "name": "blesta/stripe3ds",
+    "name": "blesta/stripe_payments",
     "description": "Stripe",
     "license": "proprietary",
     "type": "blesta-gateway-merchant",

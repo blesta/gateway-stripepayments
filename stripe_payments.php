@@ -6,12 +6,12 @@
  * The Stripe API can be found at: https://stripe.com/docs/api
  *
  * @package blesta
- * @subpackage blesta.components.gateways.stripe3ds
+ * @subpackage blesta.components.gateways.stripe_payments
  * @copyright Copyright (c) 2019, Phillips Data, Inc.
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite, MerchantCcForm
+class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOffsite, MerchantCcForm
 {
     /**
      * @var string The version of this gateway
@@ -39,7 +39,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
         Loader::loadComponents($this, ['Input']);
 
         // Load the language required by this module
-        Language::loadLang('stripe3ds', null, dirname(__FILE__) . DS . 'language' . DS);
+        Language::loadLang('stripe_payments', null, dirname(__FILE__) . DS . 'language' . DS);
     }
 
     /**
@@ -49,7 +49,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
      */
     public function getName()
     {
-        return Language::_('Stripe3ds.name', true);
+        return Language::_('StripePayments.name', true);
     }
 
     /**
@@ -117,7 +117,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
     {
         // Load the view into this object, so helpers can be automatically added to the view
         $this->view = new View('settings', 'default');
-        $this->view->setDefaultView('components' . DS . 'gateways' . DS . 'merchant' . DS . 'stripe3ds' . DS);
+        $this->view->setDefaultView('components' . DS . 'gateways' . DS . 'merchant' . DS . 'stripe_payments' . DS);
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
 
@@ -137,14 +137,14 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
                 'empty' => [
                     'rule' => 'isEmpty',
                     'negate' => true,
-                    'message' => Language::_('Stripe3ds.!error.publishable_key.empty', true)
+                    'message' => Language::_('StripePayments.!error.publishable_key.empty', true)
                 ]
             ],
             'secret_key' => [
                 'empty' => [
                     'rule' => 'isEmpty',
                     'negate' => true,
-                    'message' => Language::_('Stripe3ds.!error.secret_key.empty', true)
+                    'message' => Language::_('StripePayments.!error.secret_key.empty', true)
                 ]
             ]
         ];
@@ -396,7 +396,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
                 $loggable_response = $exception->json_body;
                 $errors = [
                     $loggable_response['error']['type'] => [
-                        'auth_error' => Language::_('Stripe3ds.!error.auth', true)
+                        'auth_error' => Language::_('StripePayments.!error.auth', true)
                     ]
                 ];
             } else {
@@ -466,7 +466,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
             $id_codes[] = $invoice->id_code;
         }
-        $description = Language::_('Stripe3ds.charge_description', true, implode(', ', $id_codes));
+        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
 
         // Charge the given Payment Method through Stripe
         $charge = [
