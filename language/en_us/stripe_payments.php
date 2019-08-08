@@ -3,8 +3,6 @@
 $lang['StripePayments.!error.auth'] = 'The gateway could not authenticate.';
 $lang['StripePayments.!error.publishable_key.empty'] = 'Please enter a Publishable Key.';
 $lang['StripePayments.!error.secret_key.empty'] = 'Please enter a Secret Key.';
-$lang['StripePayments.!error.json_required'] = 'The JSON extension is required for this gateway.';
-$lang['StripePayments.!error.setup_not_created'] = 'Unable to declare intent to store a card with Stripe.';
 
 $lang['StripePayments.name'] = 'Stripe Payments';
 

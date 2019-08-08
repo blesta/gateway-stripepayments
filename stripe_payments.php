@@ -14,14 +14,6 @@
 class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOffsite, MerchantCcForm
 {
     /**
-     * @var string The version of this gateway
-     */
-    private static $version = '0.1.0';
-    /**
-     * @var string The authors of this gateway
-     */
-    private static $authors = [['name' => 'Phillips Data, Inc.', 'url' => 'http://www.blesta.com']];
-    /**
      * @var array An array of meta data for this gateway
      */
     private $meta;
@@ -35,6 +27,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function __construct()
     {
+        $this->loadConfig(dirname(__FILE__) . DS . 'config.json');
+
         // Load components required by this module
         Loader::loadComponents($this, ['Input']);
 
@@ -43,64 +37,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     }
 
     /**
-     * Returns the name of this gateway
-     *
-     * @return string The common name of this gateway
-     */
-    public function getName()
-    {
-        return Language::_('StripePayments.name', true);
-    }
-
-    /**
-     * Returns the version of this gateway
-     *
-     * @return string The current version of this gateway
-     */
-    public function getVersion()
-    {
-        return self::$version;
-    }
-
-    /**
-     * Returns the name and URL for the authors of this gateway
-     *
-     * @return array The name and URL of the authors of this gateway
-     */
-    public function getAuthors()
-    {
-        return self::$authors;
-    }
-
-    /**
-     * Return all currencies supported by this gateway
-     *
-     * @return array A numerically indexed array containing all currency codes (ISO 4217 format) this gateway supports
-     */
-    public function getCurrencies()
-    {
-        return ['AED', 'AFN', 'ALL', 'AMD', 'ANG', 'AOA', 'ARS', 'AUD',
-            'AWG', 'AZN', 'BAM', 'BBD', 'BDT', 'BGN', 'BIF', 'BMD', 'BND',
-            'BOB', 'BRL', 'BSD', 'BWP', 'BZD', 'CAD', 'CDF', 'CHF', 'CLP',
-            'CNY', 'COP', 'CRC', 'CVE', 'CZK', 'DJF', 'DKK', 'DOP', 'DZD',
-            'EEK', 'EGP', 'ETB', 'EUR', 'FJD', 'FKP', 'GBP', 'GEL', 'GIP',
-            'GMD', 'GNF', 'GTQ', 'GYD', 'HKD', 'HNL', 'HRK', 'HTG', 'HUF',
-            'IDR', 'ILS', 'INR', 'ISK', 'JMD', 'JPY', 'KES', 'KGS', 'KHR',
-            'KMF', 'KRW', 'KYD', 'KZT', 'LAK', 'LBP', 'LKR', 'LRD', 'LSL',
-            'LTL', 'LVL', 'MAD', 'MDL', 'MGA', 'MKD', 'MNT', 'MOP', 'MRO',
-            'MUR', 'MVR', 'MWK', 'MXN', 'MYR', 'MZN', 'NAD', 'NGN', 'NIO',
-            'NOK', 'NPR', 'NZD', 'PAB', 'PEN', 'PGK', 'PHP', 'PKR', 'PLN',
-            'PYG', 'QAR', 'RON', 'RSD', 'RUB', 'RWF', 'SAR', 'SBD', 'SCR',
-            'SEK', 'SGD', 'SHP', 'SLL', 'SOS', 'SRD', 'STD', 'SVC', 'SZL',
-            'THB', 'TJS', 'TOP', 'TRY', 'TTD', 'TWD', 'TZS', 'UAH', 'UGX',
-            'USD', 'UYI', 'UZS', 'VEF', 'VND', 'VUV', 'WST', 'XAF', 'XCD',
-            'XOF', 'XPF', 'YER', 'ZAR', 'ZMW'];
-    }
-
-    /**
-     * Sets the currency code to be used for all subsequent payments
-     *
-     * @param string $currency The ISO 4217 currency code to be used for subsequent payments
+     * {@inheritdoc}
      */
     public function setCurrency($currency)
     {
@@ -108,10 +45,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     }
 
     /**
-     * Create and return the view content required to modify the settings of this gateway
-     *
-     * @param array $meta An array of meta (settings) data belonging to this gateway
-     * @return string HTML content containing the fields to update the meta data for this gateway
+     * {@inheritdoc}
      */
     public function getSettings(array $meta = null)
     {
@@ -131,7 +65,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function editSettings(array $meta)
     {
-        // Verify meta data is valid
+        // Validate the given meta data to ensure it meets the requirements
         $rules = [
             'publishable_key' => [
                 'empty' => [
@@ -150,9 +84,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         ];
 
         $this->Input->setRules($rules);
-
-        // Validate the given meta data to ensure it meets the requirements
         $this->Input->validates($meta);
+
         // Return the meta data, no changes required regardless of success or failure for this gateway
         return $meta;
     }
@@ -192,7 +125,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
 
-        // Declare to Stripe the possibility of us creating a card Payment Method through this page
+        // Declare to Stripe the possibility of us creating a card PaymentMethod through this page
         // This is confirmed in the view using stripe.handleCardSetup
         $setup_intent = $this->handleApiRequest(
             ['Stripe\SetupIntent', 'create'],
@@ -206,6 +139,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // reviewing and confirming. We would only know the amount being paid in that third step. It is
         // possible that we should add another method call at that point to notify the gateway, but that
         // seems pretty specific to Stripe PaymentIntents
+        //
+        // Look into the possibility of creating the intent here but modifying it at the time of payment
 
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
@@ -271,19 +206,19 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $errors = $this->Input->errors();
 
         // Get the status from the refund response
-        $status = 'error';
-        if (!isset($refund->error) && empty($errors)) {
-            $status = 'refunded';
-        } else {
-            $message = $this->ifSet($refund->error->message);
+        if ($errors || isset($refund->error)) {
+            if (empty($errors)) {
+                $this->Input->setErrors(['stripe_error' => ['refund' => $this->ifSet($refund->error->message)]]);
+            }
+
+            return;
         }
 
         // Return formatted response
         return [
-            'status' => $status,
+            'status' => 'refunded',
             'reference_id' => null,
-            'transaction_id' => $this->ifSet($refund->id, null),
-            'message' => $this->ifSet($message)
+            'transaction_id' => $this->ifSet($refund->id, null)
         ];
     }
 
@@ -292,7 +227,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function storeCc(array $card_info, array $contact, $client_reference_id = null)
     {
-        // Get the Payment Method from Stripe
+        // Get the PaymentMethod from Stripe
         $card = $this->handleApiRequest(
             ['Stripe\PaymentMethod', 'retrieve'],
             [$this->ifSet($card_info['reference_id'])],
@@ -303,7 +238,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             return false;
         }
 
-        // Attach the Payment Method to an existing Stripe customer if we have one on record
+        // Attach the PaymentMethod to an existing Stripe customer if we have one on record
         $attached = false;
         if ($client_reference_id) {
             $attached = $this->handleApiRequest(
@@ -315,9 +250,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             );
         }
 
-        // If we were not able to attach the Payment Method to an existing customer then create a new one
+        // If we were not able to attach the PaymentMethod to an existing customer then create a new one
         if (!$attached) {
-            $this->Input->setErrors([]);
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
                 [['payment_method' => $this->ifSet($card_info['reference_id'])]],
@@ -354,7 +288,15 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         return $card_data;
     }
 
-    private function handleApiRequest($api_method, $params, $log_url)
+    /**
+     * Executes a given action using the API, handling errors and logging
+     *
+     * @param callable $api_method The function to execute
+     * @param array $params The parameters to pass to the function
+     * @param string $log_url The url to associate with the logs for this request
+     * @return mixed False on error, other wise an object representing the Stripe response
+     */
+    private function handleApiRequest($api_method, array $params, $log_url)
     {
         $this->loadApi();
 
@@ -364,6 +306,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         try {
             $response = call_user_func_array($api_method, $params);
 
+            // Convert the response to a loggable array
             $loggable_response = $response->jsonSerialize();
         } catch (Stripe_InvalidRequestError $exception) {
             if (isset($exception->json_body)) {
@@ -415,7 +358,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
 
         // Log the request
-        $this->logRequest($log_url, is_array($params) ? $params : [$params], $loggable_response);
+        $this->logRequest($log_url, $params, $loggable_response);
 
         return empty($errors) ? $response : false;
     }
@@ -425,7 +368,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function removeCc($client_reference_id, $account_reference_id)
     {
-        // Get the Payment Method from Stripe
+        // Get the PaymentMethod from Stripe
         $card = $this->handleApiRequest(
             ['Stripe\PaymentMethod', 'retrieve'],
             [$account_reference_id],
@@ -436,7 +379,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             return false;
         }
 
-        // Detach the Payment Method from it's associated Stripe customer
+        // Detach the PaymentMethod from it's associated Stripe customer
         $this->handleApiRequest(
             function ($card) {
                 return $card->detach();
@@ -468,7 +411,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
         $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
 
-        // Charge the given Payment Method through Stripe
+        // Charge the given PaymentMethod through Stripe
         $charge = [
             'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
             'currency' => $this->ifSet($this->currency, 'usd'),
@@ -595,7 +538,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      * @param array The input parameters sent to the gateway
      * @param array The response from the gateway
      */
-    private function logRequest($url, $params, array $response)
+    private function logRequest($url, array $params, array $response)
     {
         // Define all fields to mask when logging
         $mask_fields = [
@@ -607,7 +550,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Determine success or failure for the response
         $success = false;
-        if (!($errors = $this->Input->errors()) || isset($response['error'])) {
+        if (!(($errors = $this->Input->errors()) || isset($response['error']))) {
             $success = true;
         }
 
@@ -669,33 +612,17 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     private function mapCardType($stripe_card_type)
     {
-        $blesta_card_type = 'other';
-        switch ($stripe_card_type) {
-            case 'amex':
-                $blesta_card_type = 'amex';
-                break;
-            case 'diners':
-                $blesta_card_type = 'dc-int';
-                break;
-            case 'discover':
-                $blesta_card_type = 'disc';
-                break;
-            case 'jcb':
-                $blesta_card_type = 'jcb';
-                break;
-            case 'mastercard':
-                $blesta_card_type = 'mc';
-                break;
-            case 'unionpay':
-                $blesta_card_type = 'cup';
-                break;
-            case 'visa':
-                $blesta_card_type = 'visa';
-                break;
-            case 'unknown':
-                break;
-        }
+        $card_type_map = [
+            'amex' => 'amex',
+            'diners' => 'dc-int',
+            'discover' => 'disc',
+            'jcb' => 'jcb',
+            'mastercard' => 'mc',
+            'unionpay' => 'cup',
+            'visa' => 'visa',
+            'unknown' => 'other'
+        ];
 
-        return $blesta_card_type;
+        return array_key_exists($stripe_card_type, $card_type_map) ? $card_type_map[$stripe_card_type] : 'other';
     }
 }

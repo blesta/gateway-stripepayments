@@ -1,6 +1,6 @@
 {
     "name": "blesta/stripe_payments",
-    "description": "Stripe",
+    "description": "Stripe Payments",
     "license": "proprietary",
     "type": "blesta-gateway-merchant",
     "require": {
