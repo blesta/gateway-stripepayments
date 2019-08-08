@@ -43,22 +43,6 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
     }
 
     /**
-     * Attempt to install this gateway
-     */
-    public function install()
-    {
-        // Ensure that the system has support for the JSON extension
-        if (!function_exists('json_decode')) {
-            $errors = [
-                'json' => [
-                    'required' => Language::_('Stripe3ds.!error.json_required', true)
-                ]
-            ];
-            $this->Input->setErrors($errors);
-        }
-    }
-
-    /**
      * Returns the name of this gateway
      *
      * @return string The common name of this gateway
@@ -235,7 +219,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
     public function processCc(array $card_info, $amount, array $invoice_amounts = null)
     {
         // The process is the same since both use payment methods and payment intents
-        return $this->processStoredCc(null, $card_info['stripe_payment_method'], $amount, $invoice_amounts);
+        return $this->processStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
     }
 
     /**
@@ -311,7 +295,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
         // Get the Payment Method from Stripe
         $card = $this->handleApiRequest(
             ['Stripe\PaymentMethod', 'retrieve'],
-            [$this->ifSet($card_info['stripe_payment_method'])],
+            [$this->ifSet($card_info['reference_id'])],
             $this->base_url . 'payment_methods - retrieve'
         );
 
@@ -336,7 +320,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
             $this->Input->setErrors([]);
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
-                [['payment_method' => $this->ifSet($card_info['stripe_payment_method'])]],
+                [['payment_method' => $this->ifSet($card_info['reference_id'])]],
                 $this->base_url . 'customers - create'
             );
         }
@@ -348,7 +332,7 @@ class Stripe3ds extends MerchantGateway implements MerchantCc, MerchantCcOffsite
         // Return the reference IDs and card information
         return [
             'client_reference_id' => $this->ifSet($customer->id, $client_reference_id),
-            'reference_id' => $this->ifSet($card_info['stripe_payment_method']),
+            'reference_id' => $this->ifSet($card_info['reference_id']),
             'last4' => $this->ifSet($card->card->last4),
             'expiration' => $this->ifSet($card->card->exp_year)
                 . str_pad($this->ifSet($card->card->exp_month), 2, 0, STR_PAD_LEFT),
