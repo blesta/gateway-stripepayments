@@ -56,46 +56,48 @@
     });
 
     function submitCard(event) {
-        event.preventDefault();
-        var payment_method_data = {
-            'billing_details': {
-                'name': $('#first_name').val() + ' ' + $('#last_name').val(),
-                'address': {
-                    'city': $('#city').val(),
-                    'country': $('#country').val(),
-                    'line1': $('#address1').val(),
-                    'line2': $('#address2').val(),
-                    'postal_code': $('#zip').val(),
-                    'state': $('#state').val()
+        if (!($('#pay_with_account').attr('checked') === 'checked')) {
+            event.preventDefault();
+            var payment_method_data = {
+                'billing_details': {
+                    'name': $('#first_name').val() + ' ' + $('#last_name').val(),
+                    'address': {
+                        'city': $('#city').val(),
+                        'country': $('#country').val(),
+                        'line1': $('#address1').val(),
+                        'line2': $('#address2').val(),
+                        'postal_code': $('#zip').val(),
+                        'state': $('#state').val()
+                    }
                 }
+            };
+
+            if ($('input[name="save_details"]').prop('checked') === false) {
+                // Create PaymentMethod that is not associated with a SetupIntent
+                stripe.createPaymentMethod('card', card, payment_method_data).then(function(result) {
+                    if (result.error) {
+                        var errorElement = document.getElementById('card-errors');
+                        errorElement.textContent = result.error.message;
+                    } else {
+                        // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
+                        storeReferenceAndSubmit(result.paymentMethod.id);
+                    }
+                });
+            } else {
+                var setup_secret = '<?php $this->Html->_($setup_intent->client_secret);?>';
+                var setup_data = {'payment_method_data': payment_method_data};
+
+                // Create a PaymentMethod that is associated with a SetupIntent
+                stripe.handleCardSetup(setup_secret, card, setup_data).then(function(result) {
+                    if (result.error) {
+                        var errorElement = document.getElementById('card-errors');
+                        errorElement.textContent = result.error.message;
+                    } else {
+                        // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
+                        storeReferenceAndSubmit(result.setupIntent.payment_method);
+                    }
+                });
             }
-        };
-
-        if ($('input[name="save_details"]').prop('checked') === false) {
-            // Create PaymentMethod that is not associated with a SetupIntent
-            stripe.createPaymentMethod('card', card, payment_method_data).then(function(result) {
-                if (result.error) {
-                    var errorElement = document.getElementById('card-errors');
-                    errorElement.textContent = result.error.message;
-                } else {
-                    // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
-                    storeReferenceAndSubmit(result.paymentMethod.id);
-                }
-            });
-        } else {
-            var setup_secret = '<?php $this->Html->_($setup_intent->client_secret);?>';
-            var setup_data = {'payment_method_data': payment_method_data};
-
-            // Create a PaymentMethod that is associated with a SetupIntent
-            stripe.handleCardSetup(setup_secret, card, setup_data).then(function(result) {
-                if (result.error) {
-                    var errorElement = document.getElementById('card-errors');
-                    errorElement.textContent = result.error.message;
-                } else {
-                    // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
-                    storeReferenceAndSubmit(result.setupIntent.payment_method);
-                }
-            });
         }
     }
 

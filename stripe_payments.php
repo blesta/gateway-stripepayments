@@ -54,7 +54,26 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $this->view->setDefaultView('components' . DS . 'gateways' . DS . 'merchant' . DS . 'stripe_payments' . DS);
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
+        Loader::loadModels($this, ['GatewayManager']);
 
+        // Check if the old Stripe gateway is installed and see how many cc accounts are linked to it
+        $legacy_stripe_installed = false;
+        $gateways = $this->GatewayManager->getByClass('stripe_gateway', Configure::get('Blesta.company_id'));
+        if (!empty($gateways)) {
+            $legacy_stripe_installed = true;
+
+            $record = new Record;
+            $accounts_remaining = $record->select()->
+                from('accounts_cc')->
+                where('gateway_id', '=', $gateways[0]->id)->
+                where('reference_id', '!=', null)->
+                where('status', '=', 'active')->
+                numResults();
+
+            $this->view->set('accounts_remaining', $accounts_remaining);
+        }
+
+        $this->view->set('legacy_stripe_installed', $legacy_stripe_installed);
         $this->view->set('meta', $meta);
 
         return $this->view->fetch();
@@ -79,15 +98,87 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                     'rule' => 'isEmpty',
                     'negate' => true,
                     'message' => Language::_('StripePayments.!error.secret_key.empty', true)
+                ],
+                'valid' => [
+                    'rule' => [[$this, 'validateConnection']],
+                    'message' => Language::_('StripePayments.!error.secret_key.valid', true)
                 ]
             ]
         ];
 
         $this->Input->setRules($rules);
-        $this->Input->validates($meta);
 
-        // Return the meta data, no changes required regardless of success or failure for this gateway
+        // Migrate accounts
+        if ($this->Input->validates($meta) && isset($meta['migrate_accounts'])) {
+            $this->migrateLegacyAccounts($meta);
+        }
+
+        unset($meta['migrate_accounts']);
         return $meta;
+    }
+
+    /**
+     * Migrates payment accounts from the old Stripe gateway to the new Stripe Payments gateway
+     *
+     * @param array $meta An array of meta (settings) data for this gateway
+     */
+    private function migrateLegacyAccounts(array $meta)
+    {
+        Loader::loadModels($this, ['GatewayManager']);
+
+        // Get the old Stripe gateway
+        $legacy_stripe = $this->GatewayManager->getByClass('stripe_gateway', Configure::get('Blesta.company_id'));
+        // Get the new Stripe Payments gateway
+        $stripe_payments = $this->GatewayManager->getByClass('stripe_payments', Configure::get('Blesta.company_id'));
+        if (!empty($legacy_stripe) && !empty($stripe_payments)) {
+            // Get the offsite accounts linked to the old gateway
+            $record = new Record;
+            $legacy_stripe_accounts = $record->select()->
+                from('accounts_cc')->
+                where('gateway_id', '=', $legacy_stripe[0]->id)->
+                where('reference_id', '!=', null)->
+                where('status', '=', 'active')->
+                getStatement();
+
+            // Set the meta data for this gateway
+            $this->setMeta($meta);
+            // Set the ID of the gateway (for logging purposes)
+            $this->setGatewayId($stripe_payments[0]->id);
+
+            // Collect reference IDs for all of the old accounts by fetching the customer from stripe
+            $accounts_references = [];
+            $accounts_collected = 0;
+            $batch_size = 15;
+            $account_count = count($legacy_stripe_accounts);
+            foreach ($legacy_stripe_accounts as $legacy_stripe_account) {
+                if ($accounts_collected >= min($batch_size, $account_count)) {
+                    break;
+                }
+
+                // Fetch the customer
+                $customer = $this->handleApiRequest(
+                    ['Stripe\Customer', 'retrieve'],
+                    [$legacy_stripe_account->reference_id],
+                    $this->base_url . 'customers - retrieve'
+                );
+
+                if (isset($customer->active_card->id)) {
+                    // Store the reference IDs
+                    $accounts_references[$legacy_stripe_account->id] = [
+                        'gateway_id' => $stripe_payments[0]->id,
+                        'reference_id' => $customer->active_card->id,
+                        'client_reference_id' => $customer->id,
+                    ];
+                    $accounts_collected++;
+                }
+            }
+            $record->reset();
+
+            // Update the reference and gateway IDs in Blesta
+            foreach ($accounts_references as $account_id => $account_references) {
+                $record->where('id', '=', $account_id)->update('accounts_cc', $account_references);
+            }
+        }
     }
 
     /**
@@ -136,11 +227,15 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Ideally we would set up a PaymentIntent at this point as well. Unfortunately we may not know the
         // payment amount at the time the CC info is being confirmed. For example when we make a payment
         // through the admin interface we enter card details, then select invoices to pay, and finally
-        // reviewing and confirming. We would only know the amount being paid in that third step. It is
-        // possible that we should add another method call at that point to notify the gateway, but that
-        // seems pretty specific to Stripe PaymentIntents
+        // reviewing and confirming. We would only know the amount being paid in that third step.
+        //
+        // It is possible that we should add another method call at that point to notify the
+        // gateway, but that seems pretty specific to Stripe PaymentIntents
         //
         // Look into the possibility of creating the intent here but modifying it at the time of payment
+        //
+        // Update: In order to do this we would need to accept more fields than just reference_id, we would
+        // need to truely support passing on any custom field
 
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
@@ -624,5 +719,26 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         ];
 
         return array_key_exists($stripe_card_type, $card_type_map) ? $card_type_map[$stripe_card_type] : 'other';
+    }
+
+    /**
+     * Checks whether a key can be used to connect to the Stipe API
+     *
+     * @param string $secret_key The API to connect with
+     * @return boolean True if a successful API call was made, false otherwise
+     */
+    public function validateConnection($secret_key)
+    {
+        $success = true;
+        try {
+            // Attempt to make an API request
+            Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
+            Stripe\Stripe::setApiKey($secret_key);
+            Stripe\Balance::retrieve();
+        } catch (Exception $e) {
+            $success = false;
+        }
+
+        return $success;
     }
 }
