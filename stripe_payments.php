@@ -224,20 +224,34 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             $this->base_url . 'setup_intents - create'
         );
 
-        // Ideally we would set up a PaymentIntent at this point as well. Unfortunately we may not know the
-        // payment amount at the time the CC info is being confirmed. For example when we make a payment
-        // through the admin interface we enter card details, then select invoices to pay, and finally
-        // reviewing and confirming. We would only know the amount being paid in that third step.
-        //
-        // It is possible that we should add another method call at that point to notify the
-        // gateway, but that seems pretty specific to Stripe PaymentIntents
-        //
-        // Look into the possibility of creating the intent here but modifying it at the time of payment
-        //
-        // Update: In order to do this we would need to accept more fields than just reference_id, we would
-        // need to truely support passing on any custom field
-
         $this->view->set('setup_intent', $setup_intent);
+        $this->view->set('meta', $this->meta);
+
+        return $this->view->fetch();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function buildPaymentConfirmation($reference_id, $transaction_id, $amount)
+    {
+        // Load the view into this object, so helpers can be automatically added to the view
+        $this->view = $this->makeView(
+            'payment_confirmation',
+            'default',
+            str_replace(ROOTWEBDIR, '', dirname(__FILE__) . DS)
+        );
+
+        // Load the helpers required for this view
+        Loader::loadHelpers($this, ['Form', 'Html']);
+
+        $payment_intent = $this->handleApiRequest(
+            ['Stripe\PaymentIntent', 'retrieve'],
+            [$reference_id],
+            $this->base_url . 'payment_intents - retrieve'
+        );
+
+        $this->view->set('payment_intent', $payment_intent);
         $this->view->set('meta', $this->meta);
 
         return $this->view->fetch();
@@ -257,8 +271,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function authorizeCc(array $card_info, $amount, array $invoice_amounts = null)
     {
-        // Gateway does not support this action
-        $this->Input->setErrors($this->getCommonError('unsupported'));
+        $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
     }
 
     /**
@@ -266,8 +279,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function captureCc($reference_id, $transaction_id, $amount, array $invoice_amounts = null)
     {
-        // Gateway does not support this action
-        $this->Input->setErrors($this->getCommonError('unsupported'));
+        return $this->captureStoredCc(null, null, $reference_id, $transaction_id, $amount, $invoice_amounts);
     }
 
     /**
@@ -275,16 +287,53 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function voidCc($reference_id, $transaction_id)
     {
-        // Refund a previous charge
-        $response = $this->refundCc($reference_id, $transaction_id, null);
+        // Cancel the PaymentIntent if we don't have a Charge ID yet
+        if ($reference_id && !$transaction_id) {
+            $payment_intent = $this->handleApiRequest(
+                ['Stripe\PaymentIntent', 'retrieve'],
+                [$reference_id],
+                $this->base_url . 'payment_intents - retrieve'
+            );
 
-        // Refund must be successful
-        if ($this->Input->errors()) {
-            return;
+            // Make sure we actually fetched a valid PaymentIntent
+            if ($this->Input->errors()) {
+                return;
+            }
+
+            // Cancel the PaymentIntent
+            $this->handleApiRequest(
+                function ($payment_intent) {
+                    return $payment_intent->cancel();
+                },
+                [$payment_intent],
+                $this->base_url . 'payment_intents - cancel'
+            );
+
+            // Void must be successful
+            if ($this->Input->errors()) {
+                return;
+            }
+
+            // TODO make sure we don't need to do a check on $canceled_payment_intent->status
+            // or $canceled_payment_intent->error like we do on card payments
+
+            $response = [
+                'status' => 'void',
+                'reference_id' => $reference_id,
+                'transaction_id' => $transaction_id
+            ];
+        } else {
+            // Refund a previous charge
+            $response = $this->refundCc($reference_id, $transaction_id, null);
+            $response['status'] = 'void';
+
+            // refund must be successful
+            if ($this->Input->errors()) {
+                return;
+            }
         }
 
         // Set status to void
-        $response['status'] = 'void';
         return $response;
     }
 
@@ -293,9 +342,14 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function refundCc($reference_id, $transaction_id, $amount)
     {
+        $refund_params = ['charge' => $transaction_id];
+        if ($amount) {
+            $refund_params['amount'] = $this->formatAmount($amount, $this->currency);
+        }
+
         $refund = $this->handleApiRequest(
             ['Stripe\Refund', 'create'],
-            [['charge' => $transaction_id, 'amount' => $this->formatAmount($amount, $this->currency)]],
+            [$refund_params],
             $this->base_url . 'refunds - create'
         );
         $errors = $this->Input->errors();
@@ -312,8 +366,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Return formatted response
         return [
             'status' => 'refunded',
-            'reference_id' => null,
-            'transaction_id' => $this->ifSet($refund->id, null)
+            'reference_id' => $reference_id,
+            'transaction_id' => $transaction_id
         ];
     }
 
@@ -347,6 +401,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // If we were not able to attach the PaymentMethod to an existing customer then create a new one
         if (!$attached) {
+            // Reset errors so that if attaching failed we can still create a new customer and not show errors
+            $this->Input->setErrors([]);
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
                 [['payment_method' => $this->ifSet($card_info['reference_id'])]],
@@ -534,7 +590,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         } elseif (!isset($payment->error) && empty($errors)) {
             $status = 'approved';
         } else {
-            $message = $this->ifSet($payment->error->message);
+            $message = isset($payment->error) ? $this->ifSet($payment->error->message) : '';
         }
 
         return [
@@ -554,8 +610,68 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount,
         array $invoice_amounts = null
     ) {
-        // Gateway does not support this action
-        $this->Input->setErrors($this->getCommonError('unsupported'));
+
+        Loader::loadModels($this, ['Invoices']);
+
+        // Create a list of IDs for the invoices being paid
+        $id_codes = [];
+        foreach ($invoice_amounts as $invoice_amount) {
+            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
+            $id_codes[] = $invoice->id_code;
+        }
+        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
+
+        // Create a PaymentIntent through Stripe
+        $payment = [
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currecy, 'usd')),
+            'currency' => $this->ifSet($this->currecy, 'usd'),
+            'description' => $description,
+            'payment_method' => $account_reference_id,
+            'capture_method' => 'manual',
+        ];
+        if ($client_reference_id) {
+            $payment['customer'] = $client_reference_id;
+        }
+
+        // Declare to Stripe the possibility of us creating a payment through this page
+        $payment_intent = $this->handleApiRequest(
+            ['Stripe\PaymentIntent', 'create'],
+            [$payment],
+            $this->base_url . 'payment_intents - create'
+        );
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        $status = 'error';
+        if (isset($payment_intent->status)) {
+            switch ($payment_intent->status) {
+                case 'requires_confirmation':
+                case 'requires_action':
+                case 'requires_source_action':
+                case 'processing':
+                    $status = 'pending';
+                    break;
+                case 'canceled':
+                    $status = 'decline';
+                    break;
+                case 'succeeded':
+                    $status = 'approved';
+                    break;
+                case 'requires_payment_method':
+                case 'requires_source':
+                default:
+                    $message = isset($payment_intent->error) ? $this->ifSet($payment_intent->error->message) : '';
+            }
+        }
+
+        return [
+            'status' => $status,
+            'reference_id' => $payment_intent->id,
+            'transaction_id' => null, // This should eventually be filled by the Charge ID
+            'message' => $this->ifSet($message)
+        ];
     }
 
     /**
@@ -569,8 +685,50 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount,
         array $invoice_amounts = null
     ) {
-        // Gateway does not support this action
-        $this->Input->setErrors($this->getCommonError('unsupported'));
+        $payment_intent = $this->handleApiRequest(
+            ['Stripe\PaymentIntent', 'retrieve'],
+            [$transaction_reference_id],
+            $this->base_url . 'payment_intents - retrieve'
+        );
+
+        $captured_payment_intent = $this->handleApiRequest(
+            function ($payment_intent) {
+                return $payment_intent->capture();
+            },
+            [$payment_intent],
+            $this->base_url . 'payment_intent - capture'
+        );
+
+        $status = 'error';
+        if (isset($captured_payment_intent->status)) {
+            switch ($captured_payment_intent->status) {
+                case 'requires_confirmation':
+                case 'requires_action':
+                case 'requires_source_action':
+                case 'processing':
+                    $status = 'pending';
+                    break;
+                case 'canceled':
+                    $status = 'decline';
+                    break;
+                case 'succeeded':
+                    $status = 'approved';
+                    break;
+                case 'requires_payment_method':
+                case 'requires_source':
+                default:
+                    $message = isset($captured_payment_intent->error)
+                        ? $this->ifSet($captured_payment_intent->error->message)
+                        : '';
+            }
+        }
+
+        return [
+            'status' => $status,
+            'reference_id' => $this->ifSet($captured_payment_intent->id),
+            'transaction_id' => $this->ifSet($captured_payment_intent->charges->data[0]->id),
+            'message' => $this->ifSet($message)
+        ];
     }
 
     /**

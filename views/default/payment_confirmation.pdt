@@ -1,0 +1,33 @@
+<div id="stripe-error-box"></div>
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+    // Create a Stripe client.
+    var stripe = Stripe('<?php $this->Html->_($meta['publishable_key']);?>');
+
+    $(document).ready(function() {
+        // Handle form submission.
+        $('#stripe-error-box').parents('form').on('submit', submitPayment);
+    });
+
+    function submitPayment(event) {
+        event.preventDefault();
+        // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
+        stripe.handleCardPayment('<?php $this->Html->_($payment_intent->client_secret);?>').then(function(result) {
+            if (result.error) {
+                var errorElement = document.getElementById('stripe-error-box');
+                errorElement.textContent = result.error.message;
+                $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
+            } else {
+                // Resubmit the form, bypassing this handler
+                resubmitPaymentConfirmation();
+            }
+        });
+    }
+
+    function resubmitPaymentConfirmation()
+    {
+        $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
+        $('#stripe-error-box').parents('form').off('submit', submitPayment);
+        $('#stripe-error-box').parents('form').submit();
+    }
+</script>
