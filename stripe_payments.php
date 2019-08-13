@@ -34,6 +34,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Load the language required by this module
         Language::loadLang('stripe_payments', null, dirname(__FILE__) . DS . 'language' . DS);
+
+        // Load product configuration required by this module
+        Configure::load('stripe_payments', dirname(__FILE__) . DS . 'config' . DS);
     }
 
     /**
@@ -71,6 +74,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 numResults();
 
             $this->view->set('accounts_remaining', $accounts_remaining);
+            $this->view->set('batch_size', Configure::get('StripePayments.migration_batch_size'));
         }
 
         $this->view->set('legacy_stripe_installed', $legacy_stripe_installed);
@@ -148,7 +152,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             // Collect reference IDs for all of the old accounts by fetching the customer from stripe
             $accounts_references = [];
             $accounts_collected = 0;
-            $batch_size = 15;
+            $batch_size = Configure::get('StripePayments.migration_batch_size');
             $account_count = count($legacy_stripe_accounts);
             foreach ($legacy_stripe_accounts as $legacy_stripe_account) {
                 if ($accounts_collected >= min($batch_size, $account_count)) {

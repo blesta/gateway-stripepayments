@@ -15,7 +15,7 @@ $lang['StripePayments.tooltip_secret_key'] = 'Your API Secret Key is specific to
 
 $lang['StripePayments.heading_migrate_accounts'] = 'Migrate Old Payment Accounts';
 $lang['StripePayments.text_accounts_remaining'] = 'Accounts Remaining: %1$s'; // Where %1$s is the number of accounts yet to be migrated
-$lang['StripePayments.text_migrate_accounts'] = 'You can automatically migrate payment accounts stored offsite by the old Stripe gateway over to the Stipe Payments gateway. Accounts that are not stored offsite must be migrated by manually creating new payment accounts. In order to prevent timeouts migrations will be done in batches of 15. Run this as many times as needed to migrate all payment accounts.';
+$lang['StripePayments.text_migrate_accounts'] = 'You can automatically migrate payment accounts stored offsite by the old Stripe gateway over to the Stipe Payments gateway. Accounts that are not stored offsite must be migrated by manually creating new payment accounts. In order to prevent timeouts migrations will be done in batches of %1$s. Run this as many times as needed to migrate all payment accounts.'; // Where %1$s is the batch size
 $lang['StripePayments.warning_migrate_accounts'] = 'Do not uninstall the old Stripe gateway until you finish using this migration tool. Doing so will make the tool inaccessible.';
 $lang['StripePayments.migrate_accounts'] = 'Migrate Accounts';
 
