@@ -556,23 +556,13 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function processStoredCc($client_reference_id, $account_reference_id, $amount, array $invoice_amounts = null)
     {
-        Loader::loadModels($this, ['Invoices']);
-
-        // Create a list of IDs for the invoices being paid
-        $id_codes = [];
-        foreach ($invoice_amounts as $invoice_amount) {
-            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
-            $id_codes[] = $invoice->id_code;
-        }
-        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
-
         // Charge the given PaymentMethod through Stripe
         $charge = [
             'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
             'currency' => $this->ifSet($this->currency, 'usd'),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
-            'description' => $description,
+            'description' => $this->getChargeDescription($invoice_amounts),
             'confirm' => true,
             'off_session' => false
         ];
@@ -614,22 +604,11 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount,
         array $invoice_amounts = null
     ) {
-
-        Loader::loadModels($this, ['Invoices']);
-
-        // Create a list of IDs for the invoices being paid
-        $id_codes = [];
-        foreach ($invoice_amounts as $invoice_amount) {
-            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
-            $id_codes[] = $invoice->id_code;
-        }
-        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
-
         // Create a PaymentIntent through Stripe
         $payment = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currecy, 'usd')),
-            'currency' => $this->ifSet($this->currecy, 'usd'),
-            'description' => $description,
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
+            'currency' => $this->ifSet($this->currency, 'usd'),
+            'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
             'capture_method' => 'manual',
         ];
@@ -884,7 +863,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     }
 
     /**
-     * Checks whether a key can be used to connect to the Stipe API
+     * Checks whether a key can be used to connect to the Stripe API
      *
      * @param string $secret_key The API to connect with
      * @return boolean True if a successful API call was made, false otherwise
@@ -902,5 +881,36 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
 
         return $success;
+    }
+
+    /**
+     * Retrieves the description for CC charges
+     *
+     * @param array|null $invoice_amounts An array of invoice amounts (optional)
+     * @return string The charge description
+     */
+    private function getChargeDescription(array $invoice_amounts = null)
+    {
+        // No invoice amounts, set a default description
+        if (empty($invoice_amounts)) {
+            return Language::_('StripePayments.charge_description_default', true);
+        }
+
+        Loader::loadModels($this, ['Invoices']);
+
+        // Create a list of invoices being paid
+        $id_codes = [];
+        foreach ($invoice_amounts as $invoice_amount) {
+            if (($invoice = $this->Invoices->get($invoice_amount['invoice_id']))) {
+                $id_codes[] = $invoice->id_code;
+            }
+        }
+
+        // Use the default description if there are no valid invoices
+        if (empty($id_codes)) {
+            return Language::_('StripePayments.charge_description_default', true);
+        }
+
+        return Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
     }
 }
