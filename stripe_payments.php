@@ -275,7 +275,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function authorizeCc(array $card_info, $amount, array $invoice_amounts = null)
     {
-        $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
+        return $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
     }
 
     /**
