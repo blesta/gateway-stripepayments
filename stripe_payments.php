@@ -407,9 +407,29 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         if (!$attached) {
             // Reset errors so that if attaching failed we can still create a new customer and not show errors
             $this->Input->setErrors([]);
+
+            // Set fields for the new customer profile
+            $fields = [
+                'payment_method' => $this->ifSet($card_info['reference_id']),
+                'email' => $this->ifSet($contact['email']),
+                'name' => (!empty($contact['first_name']) && !empty($contact['last_name'])
+                    ? $this->ifSet($contact['first_name']) . ' ' . $this->ifSet($contact['last_name'])
+                    : '')
+            ];
+            if (!empty($contact['address1'])) {
+                $fields['address'] = [
+                    'line1' => $this->ifSet($contact['address1']),
+                    'line2' => $this->ifSet($contact['address2']),
+                    'city' => $this->ifSet($contact['city']),
+                    'state' => $this->ifSet($contact['state']),
+                    'country' => $this->ifSet($contact['country']),
+                    'postal_code' => $this->ifSet($contact['zip'])
+                ];
+            }
+
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
-                [['payment_method' => $this->ifSet($card_info['reference_id'])]],
+                [$fields],
                 $this->base_url . 'customers - create'
             );
         }
