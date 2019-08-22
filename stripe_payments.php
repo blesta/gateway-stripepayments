@@ -457,8 +457,15 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Add a new payment account to the same client
         $card_data = $this->storeCc($card_info, $contact, $client_reference_id);
 
-        // Remove the old payment account
-        $this->removeCc($client_reference_id, $account_reference_id);
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        // Remove the old payment account if possible
+        if (false === $this->removeCc($client_reference_id, $account_reference_id)) {
+            // Ignore any errors caused by attempting to remove the old account
+            $this->Input->setErrors([]);
+        }
 
         return $card_data;
     }
