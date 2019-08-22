@@ -10,6 +10,15 @@
     });
 
     function submitPayment(event) {
+        // Skip attempting a payment if the submission is to edit in Blesta, not submit the payment
+        if (event.originalEvent !== undefined
+          && event.originalEvent.explicitOriginalTarget !== undefined
+          && event.originalEvent.explicitOriginalTarget.name !== undefined
+          && event.originalEvent.explicitOriginalTarget.name === 'submit_edit'
+        ) {
+          return;
+        }
+
         event.preventDefault();
         // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
         stripe.handleCardPayment('<?php $this->Html->_($payment_intent->client_secret);?>').then(function(result) {
