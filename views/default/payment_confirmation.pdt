@@ -6,7 +6,7 @@
 
     $(document).ready(function() {
         // Handle form submission.
-        $('#stripe-error-box').parents('form').on('submit', submitPayment);
+        $('#stripe-error-box').closest('form').on('submit', submitPayment);
     });
 
     function submitPayment(event) {
@@ -25,7 +25,7 @@
             if (result.error) {
                 var errorElement = document.getElementById('stripe-error-box');
                 errorElement.textContent = result.error.message;
-                $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
+                $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
             } else {
                 // Resubmit the form, bypassing this handler
                 resubmitPaymentConfirmation();
@@ -35,8 +35,8 @@
 
     function resubmitPaymentConfirmation()
     {
-        $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
-        $('#stripe-error-box').parents('form').off('submit', submitPayment);
-        $('#stripe-error-box').parents('form').submit();
+        $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
+        $('#stripe-error-box').closest('form').off('submit', submitPayment);
+        $('#stripe-error-box').closest('form').submit();
     }
 </script>

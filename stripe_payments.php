@@ -585,8 +585,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     {
         // Charge the given PaymentMethod through Stripe
         $charge = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
-            'currency' => $this->ifSet($this->currency, 'usd'),
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
+            'currency' => $this->ifSet($this->currency),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
             'description' => $this->getChargeDescription($invoice_amounts),
@@ -633,8 +633,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     ) {
         // Create a PaymentIntent through Stripe
         $payment = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
-            'currency' => $this->ifSet($this->currency, 'usd'),
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
+            'currency' => $this->ifSet($this->currency),
             'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
             'capture_method' => 'manual',
