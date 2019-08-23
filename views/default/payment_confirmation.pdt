@@ -6,17 +6,26 @@
 
     $(document).ready(function() {
         // Handle form submission.
-        $('#stripe-error-box').parents('form').on('submit', submitPayment);
+        $('#stripe-error-box').closest('form').on('submit', submitPayment);
     });
 
     function submitPayment(event) {
+        // Skip attempting a payment if the submission is to edit in Blesta, not submit the payment
+        if (event.originalEvent !== undefined
+          && event.originalEvent.explicitOriginalTarget !== undefined
+          && event.originalEvent.explicitOriginalTarget.name !== undefined
+          && event.originalEvent.explicitOriginalTarget.name === 'submit_edit'
+        ) {
+          return;
+        }
+
         event.preventDefault();
         // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
         stripe.handleCardPayment('<?php $this->Html->_($payment_intent->client_secret);?>').then(function(result) {
             if (result.error) {
                 var errorElement = document.getElementById('stripe-error-box');
                 errorElement.textContent = result.error.message;
-                $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
+                $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
             } else {
                 // Resubmit the form, bypassing this handler
                 resubmitPaymentConfirmation();
@@ -26,8 +35,8 @@
 
     function resubmitPaymentConfirmation()
     {
-        $(this).blestaEnableFormSubmission($('#stripe-error-box').parents('form'));
-        $('#stripe-error-box').parents('form').off('submit', submitPayment);
-        $('#stripe-error-box').parents('form').submit();
+        $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
+        $('#stripe-error-box').closest('form').off('submit', submitPayment);
+        $('#stripe-error-box').closest('form').submit();
     }
 </script>

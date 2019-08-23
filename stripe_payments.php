@@ -275,7 +275,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function authorizeCc(array $card_info, $amount, array $invoice_amounts = null)
     {
-        $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
+        return $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
     }
 
     /**
@@ -407,9 +407,29 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         if (!$attached) {
             // Reset errors so that if attaching failed we can still create a new customer and not show errors
             $this->Input->setErrors([]);
+
+            // Set fields for the new customer profile
+            $fields = [
+                'payment_method' => $this->ifSet($card_info['reference_id']),
+                'email' => $this->ifSet($contact['email']),
+                'name' => (!empty($contact['first_name']) && !empty($contact['last_name'])
+                    ? $this->ifSet($contact['first_name']) . ' ' . $this->ifSet($contact['last_name'])
+                    : '')
+            ];
+            if (!empty($contact['address1'])) {
+                $fields['address'] = [
+                    'line1' => $this->ifSet($contact['address1']),
+                    'line2' => $this->ifSet($contact['address2']),
+                    'city' => $this->ifSet($contact['city']),
+                    'state' => $this->ifSet($contact['state']),
+                    'country' => $this->ifSet($contact['country']),
+                    'postal_code' => $this->ifSet($contact['zip'])
+                ];
+            }
+
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
-                [['payment_method' => $this->ifSet($card_info['reference_id'])]],
+                [$fields],
                 $this->base_url . 'customers - create'
             );
         }
@@ -437,8 +457,15 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Add a new payment account to the same client
         $card_data = $this->storeCc($card_info, $contact, $client_reference_id);
 
-        // Remove the old payment account
-        $this->removeCc($client_reference_id, $account_reference_id);
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        // Remove the old payment account if possible
+        if (false === $this->removeCc($client_reference_id, $account_reference_id)) {
+            // Ignore any errors caused by attempting to remove the old account
+            $this->Input->setErrors([]);
+        }
 
         return $card_data;
     }
@@ -556,23 +583,13 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function processStoredCc($client_reference_id, $account_reference_id, $amount, array $invoice_amounts = null)
     {
-        Loader::loadModels($this, ['Invoices']);
-
-        // Create a list of IDs for the invoices being paid
-        $id_codes = [];
-        foreach ($invoice_amounts as $invoice_amount) {
-            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
-            $id_codes[] = $invoice->id_code;
-        }
-        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
-
         // Charge the given PaymentMethod through Stripe
         $charge = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency, 'usd')),
-            'currency' => $this->ifSet($this->currency, 'usd'),
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
+            'currency' => $this->ifSet($this->currency),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
-            'description' => $description,
+            'description' => $this->getChargeDescription($invoice_amounts),
             'confirm' => true,
             'off_session' => false
         ];
@@ -614,22 +631,11 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount,
         array $invoice_amounts = null
     ) {
-
-        Loader::loadModels($this, ['Invoices']);
-
-        // Create a list of IDs for the invoices being paid
-        $id_codes = [];
-        foreach ($invoice_amounts as $invoice_amount) {
-            $invoice = $this->Invoices->get($invoice_amount['invoice_id']);
-            $id_codes[] = $invoice->id_code;
-        }
-        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
-
         // Create a PaymentIntent through Stripe
         $payment = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currecy, 'usd')),
-            'currency' => $this->ifSet($this->currecy, 'usd'),
-            'description' => $description,
+            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
+            'currency' => $this->ifSet($this->currency),
+            'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
             'capture_method' => 'manual',
         ];
@@ -884,7 +890,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     }
 
     /**
-     * Checks whether a key can be used to connect to the Stipe API
+     * Checks whether a key can be used to connect to the Stripe API
      *
      * @param string $secret_key The API to connect with
      * @return boolean True if a successful API call was made, false otherwise
@@ -902,5 +908,36 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
 
         return $success;
+    }
+
+    /**
+     * Retrieves the description for CC charges
+     *
+     * @param array|null $invoice_amounts An array of invoice amounts (optional)
+     * @return string The charge description
+     */
+    private function getChargeDescription(array $invoice_amounts = null)
+    {
+        // No invoice amounts, set a default description
+        if (empty($invoice_amounts)) {
+            return Language::_('StripePayments.charge_description_default', true);
+        }
+
+        Loader::loadModels($this, ['Invoices']);
+
+        // Create a list of invoices being paid
+        $id_codes = [];
+        foreach ($invoice_amounts as $invoice_amount) {
+            if (($invoice = $this->Invoices->get($invoice_amount['invoice_id']))) {
+                $id_codes[] = $invoice->id_code;
+            }
+        }
+
+        // Use the default description if there are no valid invoices
+        if (empty($id_codes)) {
+            return Language::_('StripePayments.charge_description_default', true);
+        }
+
+        return Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
     }
 }
