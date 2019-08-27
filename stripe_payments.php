@@ -924,6 +924,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
 
         Loader::loadModels($this, ['Invoices']);
+        Loader::loadComponents($this, ['DataStructure']);
+        $string = $this->DataStructure->create('string');
 
         // Create a list of invoices being paid
         $id_codes = [];
@@ -938,6 +940,12 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             return Language::_('StripePayments.charge_description_default', true);
         }
 
-        return Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
+        // Truncate the description to a max of 1000 characters since that is Stripe's limit for the description field
+        $description = Language::_('StripePayments.charge_description', true, implode(', ', $id_codes));
+        if (strlen($description) > 1000) {
+            $description = $string->truncate($description, ['length' => 997]) . '...';
+        }
+
+        return $description;
     }
 }
