@@ -593,9 +593,6 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             'confirm' => true,
             'off_session' => false
         ];
-        ###
-        # TODO Figure out a good way to set this off_session parameter
-        ###
 
         $payment = $this->handleApiRequest(
             ['Stripe\PaymentIntent', 'create'],
@@ -606,9 +603,13 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Set whether there was an error
         $status = 'error';
-        if (isset($payment->error) && $this->ifSet($payment->error->code) == 'card_declined') {
+        if (isset($payment->error) && $this->ifSet($payment->error->code) === 'card_declined') {
             $status = 'declined';
-        } elseif (!isset($payment->error) && empty($errors)) {
+        } elseif (!isset($payment->error)
+            && empty($errors)
+            && isset($payment->status)
+            && $payment->status === 'succeeded'
+        ) {
             $status = 'approved';
         } else {
             $message = isset($payment->error) ? $this->ifSet($payment->error->message) : '';
