@@ -43,7 +43,7 @@
             card.mount('#card-element');
 
             // Handle real-time validation errors from the card Element.
-            card.addEventListener('change', function(event) {
+            card.on('change', function(event) {
                 var displayError = document.getElementById('card-errors');
                 if (event.error) {
                     displayError.textContent = event.error.message;
@@ -51,15 +51,28 @@
                     displayError.textContent = '';
                 }
                 $(this).blestaEnableFormSubmission($('#card-element').closest('form'));
+
+                // If payment details changed setup a new card
+                $('#reference_id').val('');
+                // Reset submission events by triggering a payment detail change
+                $('#reference_id').change();
             });
 
             // Handle form submission.
-            $('#card-element').closest('form').one('submit', submitCard);
+            $('#card-element').closest('form').on('submit', submitCard);
+
+            // If payment details changed setup a new card
+            $('#payment_details, #account, #details').on('change', function() {
+                $('#card-element').closest('form').off('submit', submitCard);
+                $('#card-element').closest('form').on('submit', submitCard);
+            });
         });
 
         function submitCard(event) {
+            // Only try and setup a card if we are not using an existing one
             if (!($('#pay_with_account').attr('checked') === 'checked' || $('select[name=payment_type]').val() === '')) {
                 event.preventDefault();
+                event.stopImmediatePropagation();
                 var payment_method_data = {
                     'billing_details': {
                         'name': $('#first_name').val() + ' ' + $('#last_name').val(),
