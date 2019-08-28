@@ -638,6 +638,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
             'capture_method' => 'manual',
+            'setup_future_usage' => 'off_session'
         ];
         if ($client_reference_id) {
             $payment['customer'] = $client_reference_id;
