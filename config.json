@@ -1,7 +1,7 @@
 {
     "version": "0.3.1",
     "name": "StripePayments.name",
-    "description": "The new Stripe gateway using secure features such as PaymentIntents and Stripe.js",
+    "description": "Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe.",
     "authors": [
         {
             "name": "Phillips Data, Inc.",
