@@ -1,6 +1,7 @@
 {
     "version": "0.3.1",
     "name": "StripePayments.name",
+    "description": "The new Stripe gateway using secure features such as PaymentIntents and Stripe.js",
     "authors": [
         {
             "name": "Phillips Data, Inc.",
