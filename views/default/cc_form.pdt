@@ -87,7 +87,9 @@
                     }
                 };
 
-                if ($('input[name="save_details"]').prop('checked') === false || $('input[name="save_details"]').not('#save_details_cc').length > 0) {
+                if ($('input[name="save_details"]').prop('checked') === false
+                    || $('input[name="save_details"]').not('#client_method input').not('#admin_clients_makepayment input').length > 0
+                ) {
                     // Create PaymentMethod that is not associated with a SetupIntent
                     stripe.createPaymentMethod('card', card, payment_method_data).then(function(result) {
                         if (result.error) {
