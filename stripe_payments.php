@@ -794,6 +794,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     {
         Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
         Stripe\Stripe::setApiKey($this->ifSet($this->meta['secret_key']));
+
+        // Include identifying information about this being a gateway for Blesta
+        Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
     }
 
     /**
