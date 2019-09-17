@@ -153,9 +153,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             $accounts_references = [];
             $accounts_collected = 0;
             $batch_size = Configure::get('StripePayments.migration_batch_size');
-            $account_count = count($legacy_stripe_accounts);
             foreach ($legacy_stripe_accounts as $legacy_stripe_account) {
-                if ($accounts_collected >= min($batch_size, $account_count)) {
+                if ($accounts_collected >= $batch_size) {
                     break;
                 }
 
