@@ -165,11 +165,22 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                     $this->base_url . 'customers - retrieve'
                 );
 
-                if (isset($customer->active_card->id)) {
+                // Determine the customer's card reference ID.
+                // The Stripe API has changed over time, so the reference ID may be in any of the following fields
+                $card_id = null;
+                if (!empty($customer->default_source)) {
+                    $card_id = $customer->default_source;
+                } elseif (!empty($customer->default_card)) {
+                    $card_id = $customer->default_card;
+                } elseif (isset($customer->active_card) && isset($customer->active_card->id)) {
+                    $card_id = $customer->active_card->id;
+                }
+
+                if ($card_id !== null) {
                     // Store the reference IDs
                     $accounts_references[$legacy_stripe_account->id] = [
                         'gateway_id' => $stripe_payments[0]->id,
-                        'reference_id' => $customer->active_card->id,
+                        'reference_id' => $card_id,
                         'client_reference_id' => $customer->id,
                     ];
                     $accounts_collected++;
