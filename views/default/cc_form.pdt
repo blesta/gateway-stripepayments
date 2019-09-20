@@ -69,8 +69,11 @@
         });
 
         function submitCard(event) {
-            // Only try and setup a card if we are not using an existing one
-            if (!($('#pay_with_account').attr('checked') === 'checked' || $('select[name=payment_type]').val() === '')) {
+            // Only try and setup a card if we are creating a new one
+            if (($('#pay_with_account').length === 0 || !$('#pay_with_account').prop('checked'))
+                && $('select[name=payment_type]').length > 0
+                && $('select[name=payment_type]').val() === 'cc'
+            ) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 var payment_method_data = {
