@@ -69,8 +69,17 @@
         });
 
         function submitCard(event) {
-            // Only try and setup a card if we are not using an existing one
-            if (!($('#pay_with_account').attr('checked') === 'checked' || $('select[name=payment_type]').val() === '')) {
+            // Paying with an existing payment account
+            let accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
+            let ccAccount = accountVisible && ($('#account').val().startsWith('cc_') || $('select[name=payment_account]').val().startsWith('cc_'));
+            // Paying with a new payment account
+            let detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
+            let ccDetails = detailsVisible && ($('#details').val() === 'cc' || $('select[name=payment_type]').val() === 'cc');
+            // Add/update only the payment account (i.e. no payment)
+            let name = $('#first_name:visible').length;
+
+            // Only process new or existing CCs and payment accounts
+            if (ccAccount || ccDetails || (name && !accountVisible && !detailsVisible)) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 var payment_method_data = {
