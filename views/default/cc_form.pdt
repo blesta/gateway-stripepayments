@@ -79,7 +79,7 @@
             let name = $('#first_name:visible').length;
 
             // Only process new or existing CCs and payment accounts
-            if (ccAccount || ccDetails || (name && !accountVisible && !detailsVisible)) {
+            if (ccDetails || (name && !accountVisible && !detailsVisible)) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 var payment_method_data = {
