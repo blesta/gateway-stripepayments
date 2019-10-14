@@ -404,13 +404,22 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Attach the PaymentMethod to an existing Stripe customer if we have one on record
         $attached = false;
         if ($client_reference_id) {
-            $attached = $this->handleApiRequest(
-                function ($customer_id, $card) {
-                    return $card->attach(['customer' => $customer_id]);
-                },
-                [$this->ifSet($client_reference_id), $card],
-                $this->base_url . 'payment_methods - attach'
+            // Get the Customer from Stripe
+            $customer = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieve'],
+                [$client_reference_id],
+                $this->base_url . 'customers - retrieve'
             );
+
+            if ($customer && (!isset($customer->deleted) || !$customer->deleted)) {
+                $attached = $this->handleApiRequest(
+                    function ($customer_id, $card) {
+                        return $card->attach(['customer' => $customer_id]);
+                    },
+                    [$this->ifSet($client_reference_id), $card],
+                    $this->base_url . 'payment_methods - attach'
+                );
+            }
         }
 
         // If we were not able to attach the PaymentMethod to an existing customer then create a new one
