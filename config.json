@@ -1,7 +1,7 @@
 {
-    "version": "1.1.0",
+    "version": "1.2.0",
     "name": "StripePayments.name",
-    "description": "Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe.",
+    "description": "StripePayments.description",
     "authors": [
         {
             "name": "Phillips Data, Inc.",
@@ -24,5 +24,6 @@
         "THB", "TJS", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX",
         "USD", "UYI", "UZS", "VEF", "VND", "VUV", "WST", "XAF", "XCD",
         "XOF", "XPF", "YER", "ZAR", "ZMW"
-    ]
+    ],
+    "signup_url": "https://dashboard.stripe.com/register"
 }
