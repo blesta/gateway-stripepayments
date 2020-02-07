@@ -27,3 +27,10 @@ your Blesta installation path.
 4. Find the Stripe Payments gateway and click the "Install" button to install it
 
 5. You're done!
+
+### Blesta Compatibility
+
+|Blesta Version|Module Version|
+|--------------|--------------|
+|< v4.9.0|v1.1.0|
+|>= v4.9.0|v1.2.0|
