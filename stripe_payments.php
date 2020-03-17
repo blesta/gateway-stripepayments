@@ -795,7 +795,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount
     ) {
         // Return formatted response
-        return $this->refundCc($reference_id, $transaction_id, $amount);
+        return $this->refundCc($transaction_reference_id, $transaction_id, $amount);
     }
 
     /**
