@@ -596,7 +596,6 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         return ['client_reference_id' => $client_reference_id, 'reference_id' => $account_reference_id];
     }
 
-
     /**
      * {@inheritdoc}
      */
@@ -610,7 +609,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             'payment_method' => $account_reference_id,
             'description' => $this->getChargeDescription($invoice_amounts),
             'confirm' => true,
-            'off_session' => false
+            'off_session' => true
         ];
 
         $payment = $this->handleApiRequest(
