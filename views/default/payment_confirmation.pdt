@@ -7,10 +7,8 @@
             var stripe = Stripe('<?php $this->Html->_($meta['publishable_key']);?>');
         }
 
-        $(document).ready(function() {
-            // Handle form submission.
-            $('#stripe-error-box').closest('form').one('submit', submitPayment);
-        });
+        // Handle form submission.
+        $('#stripe-error-box').closest('form').one('submit', submitPayment);
 
         function submitPayment(event) {
             // Skip attempting a payment if the submission is to edit in Blesta, not submit the payment
