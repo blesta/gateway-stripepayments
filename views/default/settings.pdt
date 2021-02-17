@@ -3,14 +3,14 @@
 		<li>
 			<?php
             $this->Form->label($this->_('StripePayments.publishable_key', true));
-            $this->Form->fieldText('publishable_key', $this->Html->ifSet($meta['publishable_key']));
+            $this->Form->fieldText('publishable_key', (isset($meta['publishable_key']) ? $meta['publishable_key'] : null));
             ?>
 			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('StripePayments.tooltip_publishable_key');?></div></span>
 		</li>
 		<li>
 			<?php
             $this->Form->label($this->_('StripePayments.secret_key', true));
-            $this->Form->fieldText('secret_key', $this->Html->ifSet($meta['secret_key']));
+            $this->Form->fieldText('secret_key', (isset($meta['secret_key']) ? $meta['secret_key'] : null));
             ?>
 			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('StripePayments.tooltip_secret_key');?></div></span>
 		</li>
@@ -21,8 +21,8 @@
     ?>
     <p><h1><?php $this->_('StripePayments.heading_migrate_accounts');?></h1></p>
     <section class="error_section"><article class="error_box alert"><i class="fas fa-fw fa-exclamation-triangle"></i> <?php $this->_('StripePayments.warning_migrate_accounts');?></article></section>
-    <p><?php $this->_('StripePayments.text_migrate_accounts', false, $this->Html->ifSet($batch_size, 0));?></p>
-    <p><?php $this->_('StripePayments.text_accounts_remaining', false, $this->Html->ifSet($accounts_remaining, 0));?></p>
+    <p><?php $this->_('StripePayments.text_migrate_accounts', false, (isset($batch_size) ? $batch_size : 0));?></p>
+    <p><?php $this->_('StripePayments.text_accounts_remaining', false, (isset($accounts_remaining) ? $accounts_remaining : 0));?></p>
     <?php $this->Form->fieldSubmit('migrate_accounts', $this->_('StripePayments.migrate_accounts', true), ['class' => 'btn btn-default']);?>
     <?php
     }
