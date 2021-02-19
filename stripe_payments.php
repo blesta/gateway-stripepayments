@@ -561,7 +561,6 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Log the request
         $this->logRequest($log_url, $params, $loggable_response);
 
-        var_dump($errors, $loggable_response);
         return empty($errors) ? $response : $loggable_response;
     }
 
@@ -622,7 +621,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Set whether there was an error
         $status = 'error';
-        if (isset($payment['error']) && $this->ifSet($payment['error']['code']) === 'card_declined') {
+        if (isset($payment['error'])
+            && (isset($payment['error']['code']) ? $payment['error']['code'] : null) === 'card_declined'
+        ) {
             $status = 'declined';
         } elseif (!isset($payment->error)
             && empty($errors)
