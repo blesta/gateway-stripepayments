@@ -10,7 +10,7 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         // Create a Stripe client.
-        var stripe = Stripe('<?php $this->Html->_($meta['publishable_key']);?>');
+        var stripe = Stripe('<?php (echo isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
         // Create an instance of Elements.
         var elements = stripe.elements();
@@ -110,7 +110,7 @@
                         }
                     });
                 } else {
-                    var setup_secret = '<?php $this->Html->_($setup_intent->client_secret);?>';
+                    var setup_secret = '<?php (echo isset($setup_intent->client_secret) ? $this->Html->safe($setup_intent->client_secret) : null);?>';
                     var setup_data = {'payment_method_data': payment_method_data};
 
                     // Create a PaymentMethod that is associated with a SetupIntent
