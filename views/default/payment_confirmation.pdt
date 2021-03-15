@@ -4,7 +4,7 @@
     <script>
         if (typeof stripe === 'undefined') {
             // Create a Stripe client.
-            var stripe = Stripe('<?php $this->Html->_($meta['publishable_key']);?>');
+            var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
         }
 
         // Handle form submission.
@@ -24,7 +24,7 @@
 
             event.preventDefault();
             // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
-            stripe.handleCardPayment('<?php $this->Html->_($payment_intent->client_secret);?>', {payment_method: '<?php $this->Html->_($payment_intent->payment_method);?>'}).then(function(result) {
+            stripe.handleCardPayment('<?php echo (isset($payment_intent->client_secret) ? $this->Html->safe($payment_intent->client_secret) : null);?>', {payment_method: '<?php echo (isset($payment_intent->payment_method) ? $this->Html->safe($payment_intent->payment_method) : null);?>'}).then(function(result) {
                 if (result.error) {
                     var errorElement = document.getElementById('stripe-error-box');
                     errorElement.textContent = result.error.message;

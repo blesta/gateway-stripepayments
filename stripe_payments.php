@@ -371,7 +371,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Get the status from the refund response
         if ($errors || isset($refund->error)) {
             if (empty($errors)) {
-                $this->Input->setErrors(['stripe_error' => ['refund' => $this->ifSet($refund->error->message)]]);
+                $this->Input->setErrors(['stripe_error' => ['refund' => (isset($refund->error->message) ? $refund->error->message : null)]]);
             }
 
             return;
@@ -393,7 +393,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Get the PaymentMethod from Stripe
         $card = $this->handleApiRequest(
             ['Stripe\PaymentMethod', 'retrieve'],
-            [$this->ifSet($card_info['reference_id'])],
+            [(isset($card_info['reference_id']) ? $card_info['reference_id'] : null)],
             $this->base_url . 'payment_methods - retrieve'
         );
 
@@ -416,7 +416,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                     function ($customer_id, $card) {
                         return $card->attach(['customer' => $customer_id]);
                     },
-                    [$this->ifSet($client_reference_id), $card],
+                    [(isset($client_reference_id) ? $client_reference_id : null), $card],
                     $this->base_url . 'payment_methods - attach'
                 );
             }
@@ -429,20 +429,20 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
             // Set fields for the new customer profile
             $fields = [
-                'payment_method' => $this->ifSet($card_info['reference_id']),
-                'email' => $this->ifSet($contact['email']),
+                'payment_method' => (isset($card_info['reference_id']) ? $card_info['reference_id'] : null),
+                'email' => (isset($contact['email']) ? $contact['email'] : null),
                 'name' => (!empty($contact['first_name']) && !empty($contact['last_name'])
-                    ? $this->ifSet($contact['first_name']) . ' ' . $this->ifSet($contact['last_name'])
+                    ? (isset($contact['first_name']) ? $contact['first_name'] : null) . ' ' . (isset($contact['last_name']) ? $contact['last_name'] : null)
                     : '')
             ];
             if (!empty($contact['address1'])) {
                 $fields['address'] = [
-                    'line1' => $this->ifSet($contact['address1']),
-                    'line2' => $this->ifSet($contact['address2']),
-                    'city' => $this->ifSet($contact['city']),
-                    'state' => $this->ifSet($contact['state']),
-                    'country' => $this->ifSet($contact['country']),
-                    'postal_code' => $this->ifSet($contact['zip'])
+                    'line1' => (isset($contact['address1']) ? $contact['address1'] : null),
+                    'line2' => (isset($contact['address2']) ? $contact['address2'] : null),
+                    'city' => (isset($contact['city']) ? $contact['city'] : null),
+                    'state' => (isset($contact['state']) ? $contact['state'] : null),
+                    'country' => (isset($contact['country']) ? $contact['country'] : null),
+                    'postal_code' => (isset($contact['zip']) ? $contact['zip'] : null)
                 ];
             }
 
@@ -459,12 +459,12 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Return the reference IDs and card information
         return [
-            'client_reference_id' => $this->ifSet($customer->id, $client_reference_id),
-            'reference_id' => $this->ifSet($card_info['reference_id']),
-            'last4' => $this->ifSet($card->card->last4),
-            'expiration' => $this->ifSet($card->card->exp_year)
-                . str_pad($this->ifSet($card->card->exp_month), 2, 0, STR_PAD_LEFT),
-            'type' => $this->mapCardType($this->ifSet($card->card->brand))
+            'client_reference_id' => (isset($customer->id) ? $customer->id : $client_reference_id),
+            'reference_id' => (isset($card_info['reference_id']) ? $card_info['reference_id'] : null),
+            'last4' => (isset($card->card->last4) ? $card->card->last4 : null),
+            'expiration' => (isset($card->card->exp_year) ? $card->card->exp_year : null)
+                . str_pad((isset($card->card->exp_month) ? $card->card->exp_month : null), 2, 0, STR_PAD_LEFT),
+            'type' => $this->mapCardType((isset($card->card->brand) ? $card->card->brand : null))
         ];
     }
 
@@ -603,8 +603,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     {
         // Charge the given PaymentMethod through Stripe
         $charge = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
-            'currency' => $this->ifSet($this->currency),
+            'amount' => $this->formatAmount($amount, (isset($this->currency) ? $this->currency : null)),
+            'currency' => (isset($this->currency) ? $this->currency : null),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
             'description' => $this->getChargeDescription($invoice_amounts),
@@ -633,15 +633,15 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             $status = 'approved';
         } else {
             $message = isset($payment->error)
-                ? (isset($payment->error->message) ?: null)
-                : (isset($payment['error']['message']) ?:'');
+                ? (isset($payment->error->message) ? $payment->error->message : null)
+                : (isset($payment['error']['message']) ? $payment['error']['message'] : '');
         }
 
         return [
             'status' => $status,
             'reference_id' => null,
-            'transaction_id' => isset($payment->charges->data[0]->id) ?: null,
-            'message' => $this->ifSet($message)
+            'transaction_id' => (isset($payment->charges->data[0]->id) ? $payment->charges->data[0]->id : null),
+            'message' => (isset($message) ? $message : null)
         ];
     }
 
@@ -656,8 +656,8 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     ) {
         // Create a PaymentIntent through Stripe
         $payment = [
-            'amount' => $this->formatAmount($amount, $this->ifSet($this->currency)),
-            'currency' => $this->ifSet($this->currency),
+            'amount' => $this->formatAmount($amount, (isset($this->currency) ? $this->currency : null)),
+            'currency' => (isset($this->currency) ? $this->currency : null),
             'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
             'capture_method' => 'manual',
@@ -696,7 +696,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 case 'requires_payment_method':
                 case 'requires_source':
                 default:
-                    $message = isset($payment_intent->error) ? $this->ifSet($payment_intent->error->message) : '';
+                    $message = isset($payment_intent->error) ? (isset($payment_intent->error->message) ? $payment_intent->error->message : null) : '';
             }
         }
 
@@ -704,7 +704,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
             'status' => $status,
             'reference_id' => $payment_intent->id,
             'transaction_id' => null, // This should eventually be filled by the Charge ID
-            'message' => $this->ifSet($message)
+            'message' => (isset($message) ? $message : null)
         ];
     }
 
@@ -752,16 +752,16 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 case 'requires_source':
                 default:
                     $message = isset($captured_payment_intent->error)
-                        ? $this->ifSet($captured_payment_intent->error->message)
+                        ? (isset($captured_payment_intent->error->message) ? $captured_payment_intent->error->message : null)
                         : '';
             }
         }
 
         return [
             'status' => $status,
-            'reference_id' => $this->ifSet($captured_payment_intent->id),
-            'transaction_id' => $this->ifSet($captured_payment_intent->charges->data[0]->id),
-            'message' => $this->ifSet($message)
+            'reference_id' => (isset($captured_payment_intent->id) ? $captured_payment_intent->id : null),
+            'transaction_id' => (isset($captured_payment_intent->charges->data[0]->id) ? $captured_payment_intent->charges->data[0]->id : null),
+            'message' => (isset($message) ? $message : null)
         ];
     }
 
@@ -815,7 +815,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     private function loadApi()
     {
         Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
-        Stripe\Stripe::setApiKey($this->ifSet($this->meta['secret_key']));
+        Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
 
         // Include identifying information about this being a gateway for Blesta
         Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
