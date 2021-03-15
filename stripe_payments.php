@@ -509,7 +509,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
             // Convert the response to a loggable array
             $loggable_response = $response->jsonSerialize();
-        } catch (Stripe_InvalidRequestError $exception) {
+        } catch (Stripe\Error\InvalidRequest $exception) {
             if (isset($exception->json_body)) {
                 $loggable_response = $exception->json_body;
                 $errors = [
@@ -521,23 +521,23 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 // Gateway returned an invalid response
                 $errors = $this->getCommonError('general');
             }
-        } catch (Stripe_CardError $exception) {
-            if (isset($exception->json_body)) {
-                $loggable_response = $exception->json_body;
+        } catch (Stripe\Error\Card $exception) {
+            if (isset($exception->jsonBody)) {
+                $loggable_response = $exception->jsonBody;
                 $errors = [
                     $loggable_response['error']['type'] => [
-                        $loggable_response['error']['code'] => $response['error']['message']
+                        $loggable_response['error']['code'] => $loggable_response['error']['message']
                     ]
                 ];
             } else {
                 // Gateway returned an invalid response
                 $errors = $this->getCommonError('general');
             }
-        } catch (Stripe_AuthenticationError $exception) {
-            if (isset($exception->json_body)) {
+        } catch (Stripe\Error\Authentication $exception) {
+            if (isset($exception->jsonBody)) {
                 // Don't use the actual error (as it may contain an API key, albeit invalid),
                 // rather a general auth error
-                $loggable_response = $exception->json_body;
+                $loggable_response = $exception->jsonBody;
                 $errors = [
                     $loggable_response['error']['type'] => [
                         'auth_error' => Language::_('StripePayments.!error.auth', true)
@@ -561,7 +561,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Log the request
         $this->logRequest($log_url, $params, $loggable_response);
 
-        return empty($errors) ? $response : false;
+        return empty($errors) ? $response : $loggable_response;
     }
 
     /**
@@ -621,7 +621,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
         // Set whether there was an error
         $status = 'error';
-        if (isset($payment->error) && (isset($payment->error->code) ? $payment->error->code : null) === 'card_declined') {
+        if (isset($payment['error'])
+            && (isset($payment['error']['code']) ? $payment['error']['code'] : null) === 'card_declined'
+        ) {
             $status = 'declined';
         } elseif (!isset($payment->error)
             && empty($errors)
@@ -630,7 +632,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         ) {
             $status = 'approved';
         } else {
-            $message = isset($payment->error) ? (isset($payment->error->message) ? $payment->error->message : null) : '';
+            $message = isset($payment->error)
+                ? (isset($payment->error->message) ? $payment->error->message : null)
+                : (isset($payment['error']['message']) ? $payment['error']['message'] : '');
         }
 
         return [
