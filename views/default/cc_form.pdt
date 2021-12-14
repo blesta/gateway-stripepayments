@@ -9,6 +9,15 @@
 
     <script src="https://js.stripe.com/v3/"></script>
     <script>
+        // Unload duplicated instances of Stripe.js
+        $(document).ready(function() {
+            $('script[src="https://js.stripe.com/v3/"]').each(function() {
+                if ($('script[src="https://js.stripe.com/v3/"]').length > 1) {
+                    $(this).remove();
+                }
+            });
+        });
+
         // Create a Stripe client.
         var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
@@ -22,7 +31,6 @@
                 fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
                 fontSmoothing: 'antialiased',
                 fontSize: '16px',
-                width: '250px',
                 '::placeholder': {
                     color: '#aab7c4'
                 }
@@ -50,21 +58,21 @@
                 } else {
                     displayError.textContent = '';
                 }
-                $(this).blestaEnableFormSubmission($('#card-element').closest('form'));
+                $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
 
                 // If payment details changed setup a new card
-                $('#reference_id').val('');
+                $('#stripe-cc-form #reference_id').val('');
                 // Reset submission events by triggering a payment detail change
-                $('#reference_id').change();
+                $('#stripe-cc-form #reference_id').change();
             });
 
             // Handle form submission.
-            $('#card-element').closest('form').on('submit', submitCard);
+            $('#stripe-cc-form').closest('form').on('submit', submitCard);
 
             // If payment details changed setup a new card
             $('#payment_details, #account, #details').on('change', function() {
-                $('#card-element').closest('form').off('submit', submitCard);
-                $('#card-element').closest('form').on('submit', submitCard);
+                $('#stripe-cc-form').closest('form').off('submit', submitCard);
+                $('#stripe-cc-form').closest('form').on('submit', submitCard);
             });
         });
 
@@ -95,15 +103,15 @@
                     }
                 };
 
-                if ($('input[name="save_details"]').prop('checked') === false
-                    || $('input[name="save_details"]').not('#client_method input').not('#admin_clients_makepayment input').length > 0
+                if ($('#payment_details_cc input[name="save_details"]').prop('checked') === false
+                    || $('#payment_details_cc input[name="save_details"]').not('#client_method input').not('#admin_clients_makepayment input').length > 0
                 ) {
                     // Create PaymentMethod that is not associated with a SetupIntent
                     stripe.createPaymentMethod('card', card, payment_method_data).then(function(result) {
                         if (result.error) {
                             var errorElement = document.getElementById('card-errors');
                             errorElement.textContent = result.error.message;
-                            $(this).blestaEnableFormSubmission($('#card-element').closest('form'));
+                            $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
                         } else {
                             // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
                             storeReferenceAndSubmit(result.paymentMethod.id);
@@ -118,7 +126,7 @@
                         if (result.error) {
                             var errorElement = document.getElementById('card-errors');
                             errorElement.textContent = result.error.message;
-                            $(this).blestaEnableFormSubmission($('#card-element').closest('form'));
+                            $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
                         } else {
                             // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
                             storeReferenceAndSubmit(result.setupIntent.payment_method);
@@ -130,10 +138,10 @@
 
         function storeReferenceAndSubmit(reference_id)
         {
-            $('#reference_id').val(reference_id);
-            $('#card-element').closest('form').off('submit', submitCard);
-            $(this).blestaEnableFormSubmission($('#card-element').closest('form'));
-            $('#card-element').closest('form').submit();
+            $('#stripe-cc-form #reference_id').val(reference_id);
+            $('#stripe-cc-form').closest('form').off('submit', submitCard);
+            $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
+            $('#stripe-cc-form').closest('form').submit();
         }
     </script>
 </div>

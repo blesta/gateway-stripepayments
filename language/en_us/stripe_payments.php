@@ -8,6 +8,19 @@ $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stri
 $lang['StripePayments.name'] = 'Stripe Payments';
 $lang['StripePayments.description'] = 'Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe';
 
+// Form
+$lang['StripePayments.ach_form.field_type'] = 'Account Type';
+$lang['StripePayments.ach_form.field_holder_type'] = 'Holder Type';
+$lang['StripePayments.ach_form.field_holder_type_individual'] = 'Individual';
+$lang['StripePayments.ach_form.field_holder_type_company'] = 'Company';
+$lang['StripePayments.ach_form.field_account_number'] = 'Account Number';
+$lang['StripePayments.ach_form.field_routing_number'] = 'Routing Number';
+$lang['StripePayments.ach_form.field_notice'] = 'You will need to verify this account before you can use it to make a payment.';
+
+$lang['StripePayments.ach_form.verification_notice'] = 'We sent two small deposits to this bank account. To verify this account, please confirm the amounts of these deposits.';
+$lang['StripePayments.ach_form.field_first_deposit'] = 'First Deposit';
+$lang['StripePayments.ach_form.field_second_deposit'] = 'Second Deposit';
+
 // Settings
 $lang['StripePayments.publishable_key'] = 'API Publishable Key';
 $lang['StripePayments.secret_key'] = 'API Secret Key';

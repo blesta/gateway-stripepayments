@@ -19,7 +19,7 @@
               && submit_btn.is('button[type="submit"], input[type="submit"]')
               && submit_btn.attr('name') === 'submit_edit'
             ) {
-              return;
+                return;
             }
 
             event.preventDefault();

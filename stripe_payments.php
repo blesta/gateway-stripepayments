@@ -11,7 +11,7 @@
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOffsite, MerchantCcForm
+class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
 {
     /**
      * @var array An array of meta data for this gateway
@@ -55,6 +55,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Load the view into this object, so helpers can be automatically added to the view
         $this->view = new View('settings', 'default');
         $this->view->setDefaultView('components' . DS . 'gateways' . DS . 'merchant' . DS . 'stripe_payments' . DS);
+
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
         Loader::loadModels($this, ['GatewayManager']);
@@ -225,7 +226,11 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
     public function buildCcForm()
     {
         // Load the view into this object, so helpers can be automatically added to the view
-        $this->view = $this->makeView('cc_form', 'default', str_replace(ROOTWEBDIR, '', dirname(__FILE__) . DS));
+        $this->view = $this->makeView(
+            'cc_form',
+            'default',
+            str_replace(ROOTWEBDIR, '', dirname(__FILE__) . DS)
+        );
 
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
@@ -509,9 +514,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
 
             // Convert the response to a loggable array
             $loggable_response = $response->jsonSerialize();
-        } catch (Stripe\Error\InvalidRequest $exception) {
-            if (isset($exception->json_body)) {
-                $loggable_response = $exception->json_body;
+        } catch (\Stripe\Exception\InvalidRequestException $exception) {
+            if (!empty($exception->getJsonBody())) {
+                $loggable_response = $exception->getJsonBody();
                 $errors = [
                     $loggable_response['error']['type'] => [
                         'error' => $loggable_response['error']['message']
@@ -521,9 +526,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 // Gateway returned an invalid response
                 $errors = $this->getCommonError('general');
             }
-        } catch (Stripe\Error\Card $exception) {
-            if (isset($exception->jsonBody)) {
-                $loggable_response = $exception->jsonBody;
+        } catch (\Stripe\Exception\CardException $exception) {
+            if (!empty($exception->getJsonBody())) {
+                $loggable_response = $exception->getJsonBody();
                 $errors = [
                     $loggable_response['error']['type'] => [
                         $loggable_response['error']['code'] => $loggable_response['error']['message']
@@ -533,11 +538,11 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 // Gateway returned an invalid response
                 $errors = $this->getCommonError('general');
             }
-        } catch (Stripe\Error\Authentication $exception) {
-            if (isset($exception->jsonBody)) {
+        } catch (\Stripe\Exception\AuthenticationException $exception) {
+            if (!empty($exception->getJsonBody())) {
                 // Don't use the actual error (as it may contain an API key, albeit invalid),
                 // rather a general auth error
-                $loggable_response = $exception->jsonBody;
+                $loggable_response = $exception->getJsonBody();
                 $errors = [
                     $loggable_response['error']['type'] => [
                         'auth_error' => Language::_('StripePayments.!error.auth', true)
@@ -547,7 +552,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
                 // Gateway returned an invalid response
                 $errors = $this->getCommonError('general');
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Any other exception, including Stripe_ApiError
             $errors = $this->getCommonError('general');
             $loggable_response = ['error' => $e->getMessage()];
@@ -974,5 +979,344 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         }
 
         return $description;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function requiresAchStorage()
+    {
+        return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function buildAchForm($account_info = null)
+    {
+        // Load the view into this object, so helpers can be automatically added to the view
+        $this->view = $this->makeView(
+            'ach_form',
+            'default',
+            str_replace(ROOTWEBDIR, '', dirname(__FILE__) . DS)
+        );
+
+        // Load the models and helpers required for this view
+        Loader::loadModels($this, ['Accounts']);
+        Loader::loadHelpers($this, ['Form', 'Html']);
+
+        // Declare to Stripe the possibility of us creating a bank account PaymentMethod through this page
+        // This is confirmed in the view using stripe.handleCardSetup
+        $setup_intent = $this->handleApiRequest(
+            ['Stripe\SetupIntent', 'create'],
+            [],
+            $this->base_url . 'setup_intents - create'
+        );
+
+        // Get bank account, if already exists
+        $status = 'new';
+        if (!empty($account_info['reference_id']) && !empty($account_info['client_reference_id'])) {
+            $account = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieveSource'],
+                [$account_info['client_reference_id'], $account_info['reference_id']],
+                $this->base_url . 'customers - retrieveSource'
+            );
+
+            if ($account->status == 'new') {
+                $status = 'unverified';
+            }
+        }
+
+        // Set select options
+        $holder_types = [
+            'individual' => Language::_('StripePayments.ach_form.field_holder_type_individual', true),
+            'company' => Language::_('StripePayments.ach_form.field_holder_type_company', true)
+        ];
+
+        $this->view->set('setup_intent', $setup_intent);
+        $this->view->set('meta', $this->meta);
+        $this->view->set('types', $this->Accounts->getAchTypes());
+        $this->view->set('status', $status);
+        $this->view->set('holder_types', $holder_types);
+        $this->view->set('account_info', $account_info);
+
+        return $this->view->fetch();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function processAch(array $account_info, $amount, array $invoice_amounts = null)
+    {
+        $this->Input->setErrors($this->getCommonError('unsupported'));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function voidAch($reference_id, $transaction_id)
+    {
+        $this->Input->setErrors($this->getCommonError('unsupported'));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function refundAch($reference_id, $transaction_id, $amount)
+    {
+        $this->Input->setErrors($this->getCommonError('unsupported'));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function storeAch(array $account_info, array $contact, $client_reference_id = null)
+    {
+        if ($client_reference_id == null) {
+            // Set fields for the new customer profile
+            $fields = [
+                'source' => ($account_info['reference_id'] ?? null),
+                'email' => ($contact['email'] ?? null),
+                'name' => (!empty($contact['first_name']) && !empty($contact['last_name']) ?
+                    ($contact['first_name'] ?? null) . ' ' . ($contact['last_name'] ?? null) : '')
+            ];
+            if (!empty($contact['address1'])) {
+                $fields['address'] = [
+                    'line1' => ($contact['address1'] ?? null),
+                    'line2' => ($contact['address2'] ?? null),
+                    'city' => ($contact['city'] ?? null),
+                    'state' => ($contact['state'] ?? null),
+                    'country' => ($contact['country'] ?? null),
+                    'postal_code' => ($contact['zip'] ?? null)
+                ];
+            }
+            $customer = $this->handleApiRequest(
+                ['Stripe\Customer', 'create'],
+                [$fields],
+                $this->base_url . 'customers - create'
+            );
+
+            if (isset($customer->default_source)) {
+                $account_info['reference_id'] = $customer->default_source;
+            }
+        } else {
+            // Attach the bank account to the existing customer
+            $customer = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieve'],
+                [$client_reference_id],
+                $this->base_url . 'customers - retrieve'
+            );
+            $this->handleApiRequest(
+                ['Stripe\Customer', 'createSource'],
+                [($customer->id ?? $client_reference_id), ['source' => $account_info['reference_id']]],
+                $this->base_url . 'customers - createSource'
+            );
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+        }
+
+        // Get bank account
+        $account = $this->handleApiRequest(
+            ['Stripe\Customer', 'retrieveSource'],
+            [($customer->id ?? $client_reference_id), $account_info['reference_id']],
+            $this->base_url . 'customers - retrieveSource'
+        );
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        // Return the reference IDs and bank account information
+        return [
+            'client_reference_id' => ($customer->id ?? $client_reference_id),
+            'reference_id' => ($account_info['reference_id'] ?? null),
+            'last4' => ($account->last4 ?? null)
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function updateAch(array $account_info, array $contact, $client_reference_id, $account_reference_id)
+    {
+        // Verify the bank account if the reference_id matches the account info
+        if (($account_info['reference_id'] ?? '') == $account_reference_id) {
+            // Get bank account
+            $account = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieveSource'],
+                [($customer->id ?? $client_reference_id), $account_info['reference_id']],
+                $this->base_url . 'customers - retrieveSource'
+            );
+
+            if (!empty($account['error'])) {
+                // Ignore any errors caused by attempting to fetch the old account
+                $this->Input->setErrors([]);
+            }
+
+            // Verify bank account
+            if (isset($account->customer) && $account->customer == $client_reference_id) {
+                try {
+                    $account->verify(['amounts' => [($_POST['first_deposit'] ?? 0), ($_POST['second_deposit'] ?? 0)]]);
+                } catch (Throwable $e) {
+                    $this->Input->setErrors(['verify' => ['error' => $e->getMessage()]]);
+                }
+
+                if ($this->Input->errors()) {
+                    return false;
+                }
+            }
+
+            return [
+                'client_reference_id' => $client_reference_id,
+                'reference_id' => $account_reference_id
+            ];
+        } else {
+            // Add a new bank account to the same client
+            $account_data = $this->storeAch($account_info, $contact, $client_reference_id);
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+
+            // Remove the old payment account if possible
+            if (false === $this->removeAch($client_reference_id, $account_reference_id)) {
+                // Ignore any errors caused by attempting to remove the old account
+                $this->Input->setErrors([]);
+            }
+
+            return $account_data;
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function removeAch($client_reference_id, $account_reference_id)
+    {
+        $this->handleApiRequest(
+            ['Stripe\Customer', 'deleteSource'],
+            [$client_reference_id, $account_reference_id],
+            $this->base_url . 'customers - deleteSource'
+        );
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        return [
+            'client_reference_id' => $client_reference_id,
+            'reference_id' => $account_reference_id
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function processStoredAch(
+        $client_reference_id,
+        $account_reference_id,
+        $amount,
+        array $invoice_amounts = null
+    )
+    {
+        // Charge the given PaymentMethod through Stripe
+        $charge = [
+            'amount' => $this->formatAmount($amount, ($this->currency ?? null)),
+            'currency' => ($this->currency ?? null),
+            'customer' => $client_reference_id,
+            'description' => $this->getChargeDescription($invoice_amounts)
+        ];
+
+        $payment = $this->handleApiRequest(
+            ['Stripe\Charge', 'create'],
+            [$charge],
+            $this->base_url . 'charges - create'
+        );
+        $errors = $this->Input->errors();
+
+        if ($errors) {
+            return false;
+        }
+
+        // Set whether there was an error
+        $status = 'error';
+        if (isset($payment['error'])) {
+            $status = 'declined';
+        } elseif (!isset($payment->error)
+            && empty($errors)
+            && isset($payment->status)
+            && $payment->status === 'pending'
+        ) {
+            $status = 'approved';
+        } else {
+            $message = isset($payment->error)
+                ? ($payment->error->message ?? null)
+                : ($payment['error']['message'] ?? '');
+        }
+
+        return [
+            'status' => $status,
+            'reference_id' => ($payment->id ?? null),
+            'transaction_id' => ($payment->balance_transaction ?? null),
+            'message' => ($message ?? null)
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function voidStoredAch(
+        $client_reference_id,
+        $account_reference_id,
+        $transaction_reference_id,
+        $transaction_id
+    )
+    {
+        // Same as refund
+        $this->refundStoredAch($client_reference_id, $account_reference_id, $transaction_reference_id, $transaction_id, null);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function refundStoredAch(
+        $client_reference_id,
+        $account_reference_id,
+        $transaction_reference_id,
+        $transaction_id,
+        $amount
+    )
+    {
+        $refund_params = ['charge' => $transaction_reference_id];
+        if ($amount) {
+            $refund_params['amount'] = $this->formatAmount($amount, $this->currency);
+        }
+
+        $refund = $this->handleApiRequest(
+            ['Stripe\Refund', 'create'],
+            [$refund_params],
+            $this->base_url . 'refunds - create'
+        );
+        $errors = $this->Input->errors();
+
+        // Get the status from the refund response
+        if ($errors || isset($refund->error)) {
+            if (empty($errors)) {
+                $this->Input->setErrors([
+                    'stripe_error' => ['refund' => ($refund->error->message ?? null)]
+                ]);
+            }
+
+            return;
+        }
+
+        // Return formatted response
+        return [
+            'status' => 'refunded',
+            'reference_id' => $transaction_reference_id,
+            'transaction_id' => $transaction_id
+        ];
     }
 }

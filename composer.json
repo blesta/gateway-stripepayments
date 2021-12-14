@@ -5,6 +5,6 @@
     "type": "blesta-gateway-merchant",
     "require": {
         "blesta/composer-installer": "~1.0",
-        "stripe/stripe-php": "~6.40"
+        "stripe/stripe-php": "~7.0"
     }
 }
