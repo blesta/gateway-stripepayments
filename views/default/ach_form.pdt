@@ -86,6 +86,9 @@
         $(document).ready(function() {
             $('#payment_details_ach input[name="save_details"]').prop('checked', true);
             $('#payment_details_ach input[name="save_details"]').parent().hide();
+
+            $('#stripe-ach-form').closest('form').find('input[name="save_details"]').prop('checked', true);
+            $('#stripe-ach-form').closest('form').find('input[name="save_details"]').parent().hide();
         });
 
         // If payment details changed setup a new bank account
