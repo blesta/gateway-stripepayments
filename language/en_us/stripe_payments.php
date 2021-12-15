@@ -5,6 +5,8 @@ $lang['StripePayments.!error.publishable_key.empty'] = 'Please enter a Publishab
 $lang['StripePayments.!error.secret_key.empty'] = 'Please enter a Secret Key.';
 $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stripe API using the given Secret Key.';
 
+$lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify your bank account before you can use it to make a payment.';
+
 $lang['StripePayments.name'] = 'Stripe Payments';
 $lang['StripePayments.description'] = 'Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe';
 

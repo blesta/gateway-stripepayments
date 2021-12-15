@@ -61,6 +61,7 @@
     } elseif (($status ?? 'new') == 'unverified') {
         $this->Form->fieldHidden('type', $account_info['type'] ?? null, ['id' => 'type']);
         $this->Form->fieldHidden('reference_id', $account_info['reference_id'] ?? null, ['id' => 'reference_id']);
+        $this->Form->fieldHidden('client_reference_id', $account_info['client_reference_id'] ?? null, ['id' => 'client_reference_id']);
     }
 
     if (($status ?? 'new') == 'new') {

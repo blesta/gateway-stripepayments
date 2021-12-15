@@ -519,7 +519,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 $loggable_response = $exception->getJsonBody();
                 $errors = [
                     $loggable_response['error']['type'] => [
-                        'error' => $loggable_response['error']['message']
+                        'error' => $this->formatErrorMessage($loggable_response['error'])
                     ]
                 ];
             } else {
@@ -531,7 +531,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 $loggable_response = $exception->getJsonBody();
                 $errors = [
                     $loggable_response['error']['type'] => [
-                        $loggable_response['error']['code'] => $loggable_response['error']['message']
+                        $loggable_response['error']['code'] => $this->formatErrorMessage($loggable_response['error'])
                     ]
                 ];
             } else {
@@ -1318,5 +1318,36 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'reference_id' => $transaction_reference_id,
             'transaction_id' => $transaction_id
         ];
+    }
+
+    /**
+     * Formats an error message returned by the API
+     *
+     * @param array $loggable_response A key/value array containing:
+     *
+     *  - code The error code
+     *  - message The error message
+     *  - type The type of the error
+     * @return string The formatted error message
+     */
+    private function formatErrorMessage($loggable_response)
+    {
+        // Check if a language definition exists for this error message
+        $lang = Language::_('StripePayments.!error.' . $loggable_response['code'], true);
+
+        if (!empty($lang)) {
+            return $lang;
+        }
+
+        // If the message contains a URL to Stripe, remove it
+        $message_lines = explode('. ', str_replace("\n", '. ', $loggable_response['message']));
+        foreach ($message_lines as $line => $message) {
+            if (str_contains($message, 'stripe.com')) {
+                unset($message_lines[$line]);
+            }
+        }
+        $loggable_response['message'] = trim(implode('. ', $message_lines)) . '.';
+
+        return $loggable_response['message'];
     }
 }
