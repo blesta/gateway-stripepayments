@@ -629,8 +629,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'off_session' => true
         ];
 
-        if($customer_present)
+        if ($customer_present) {
             unset($charge['off_session']);
+        }
 
         $payment = $this->handleApiRequest(
             ['Stripe\PaymentIntent', 'create'],
