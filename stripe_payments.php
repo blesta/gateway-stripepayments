@@ -296,13 +296,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function authorizeCc(array $card_info, $amount, array $invoice_amounts = null)
     {
-        return $this->authorizeStoredCc(
-            null,
-            $card_info['reference_id'],
-            $amount,
-            $invoice_amounts,
-            true
-        );
+        return $this->authorizeStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
     }
 
     /**
@@ -678,8 +672,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $client_reference_id,
         $account_reference_id,
         $amount,
-        array $invoice_amounts = null,
-        $customer_present = false
+        array $invoice_amounts = null
     ) {
         // Create a PaymentIntent through Stripe
         $payment = [
@@ -690,8 +683,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'capture_method' => 'manual',
             'setup_future_usage' => 'off_session'
         ];
-        if($customer_present)
-            $payment['setup_future_usage'] = 'on_session';
         if ($client_reference_id) {
             $payment['customer'] = $client_reference_id;
         }
