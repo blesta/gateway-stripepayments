@@ -282,7 +282,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     public function processCc(array $card_info, $amount, array $invoice_amounts = null)
     {
         // The process is the same since both use payment methods and payment intents
-        return $this->processStoredCc(null, $card_info['reference_id'], $amount, $invoice_amounts);
+        return $this->processStoredCc(
+            null,
+            $card_info['reference_id'],
+            $amount,
+            $invoice_amounts,
+            true
+        );
     }
 
     /**
@@ -604,7 +610,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
-    public function processStoredCc($client_reference_id, $account_reference_id, $amount, array $invoice_amounts = null)
+    public function processStoredCc(
+        $client_reference_id,
+        $account_reference_id,
+        $amount, array
+        $invoice_amounts = null,
+        $customer_present = false
+    )
     {
         // Charge the given PaymentMethod through Stripe
         $charge = [
@@ -616,6 +628,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'confirm' => true,
             'off_session' => true
         ];
+
+        if($customer_present)
+            unset($charge['off_session']);
 
         $payment = $this->handleApiRequest(
             ['Stripe\PaymentIntent', 'create'],
