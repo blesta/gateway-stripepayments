@@ -301,6 +301,24 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function voidCc($reference_id, $transaction_id)
     {
+        return $this->voidTransaction($reference_id, $transaction_id);
+    }
+
+    /**
+     * Void a charge
+     *
+     * @param string $reference_id The reference ID for the previously authorized transaction
+     * @param string $transaction_id The transaction ID for the previously authorized transaction
+     * @return array An array of transaction data including:
+     *
+     *  - status The status of the transaction (approved, declined, void, pending, reconciled, refunded, returned)
+     *  - reference_id The reference ID for gateway-only use with this transaction (optional)
+     *  - transaction_id The ID returned by the remote gateway to identify this transaction
+     *  - message The message to be displayed in the interface in addition to the standard message for
+     *      this transaction status (optional)
+     */
+    public function voidTransaction($reference_id, $transaction_id)
+    {
         // Cancel the PaymentIntent if we don't have a Charge ID yet
         if ($reference_id && !$transaction_id) {
             $payment_intent = $this->handleApiRequest(
@@ -356,6 +374,25 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
      */
     public function refundCc($reference_id, $transaction_id, $amount)
     {
+        return $this->refundTransaction($reference_id, $transaction_id, $amount);
+    }
+
+    /**
+     * Refund a charge
+     *
+     * @param string $reference_id The reference ID for the previously authorized transaction
+     * @param string $transaction_id The transaction ID for the previously authorized transaction
+     * @param float $amount The amount to refund this card
+     * @return array An array of transaction data including:
+     *
+     *  - status The status of the transaction (approved, declined, void, pending, reconciled, refunded, returned)
+     *  - reference_id The reference ID for gateway-only use with this transaction (optional)
+     *  - transaction_id The ID returned by the remote gateway to identify this transaction
+     *  - message The message to be displayed in the interface in addition to the standard message for
+     *      this transaction status (optional)
+     */
+    public function refundTransaction($reference_id, $transaction_id, $amount)
+    {
         $refund_params = ['charge' => $transaction_id];
         if ($amount) {
             $refund_params['amount'] = $this->formatAmount($amount, $this->currency);
@@ -371,7 +408,9 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         // Get the status from the refund response
         if ($errors || isset($refund->error)) {
             if (empty($errors)) {
-                $this->Input->setErrors(['stripe_error' => ['refund' => (isset($refund->error->message) ? $refund->error->message : null)]]);
+                $this->Input->setErrors(
+                    ['stripe_error' => ['refund' => (isset($refund->error->message) ? $refund->error->message : null)]]
+                );
             }
 
             return;
@@ -774,17 +813,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $transaction_reference_id,
         $transaction_id
     ) {
-        // Refund a previous charge
-        $response = $this->refundCc($transaction_reference_id, $transaction_id, null);
-
-        // Refund must be successful
-        if ($this->Input->errors()) {
-            return;
-        }
-
-        // Set status to void
-        $response['status'] = 'void';
-        return $response;
+        return $this->voidTransaction($transaction_reference_id, $transaction_id);
     }
 
     /**
@@ -798,7 +827,7 @@ class StripePayments extends MerchantGateway implements MerchantCc, MerchantCcOf
         $amount
     ) {
         // Return formatted response
-        return $this->refundCc($transaction_reference_id, $transaction_id, $amount);
+        return $this->refundTransaction($transaction_reference_id, $transaction_id, $amount);
     }
 
     /**
