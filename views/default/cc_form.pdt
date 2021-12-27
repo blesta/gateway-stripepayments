@@ -70,7 +70,9 @@
             // Process submitted card
             function submitCard(event) {
                 // Disable ACH form
-                $('#stripe-ach-form input').attr('disabled', true);
+                if ($('select[name="payment_type"]').val() == 'cc') {
+                    $('#stripe-ach-form input').attr('disabled', true);
+                }
 
                 // Paying with an existing payment account
                 let accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));

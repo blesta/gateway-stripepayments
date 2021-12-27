@@ -93,7 +93,9 @@
 
             function processBankAccount(event) {
                 // Disable CC form
-                $('#stripe-cc-form input').attr('disabled', true);
+                if ($('select[name="payment_type"]').val() == 'ach') {
+                    $('#stripe-cc-form input').attr('disabled', true);
+                }
 
                 // Paying with an existing payment account
                 var accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
