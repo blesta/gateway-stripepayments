@@ -1250,7 +1250,17 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 }
             }
 
+            // Get current account
+            Loader::loadModels($this, ['GatewayManager']);
+            Loader::loadComponents($this, ['Record']);
+            $stored_account = $this->Record->select()
+                ->from('accounts_ach')
+                ->where('reference_id', '=', $account_reference_id)
+                ->fetch();
+            $stored_account->last4 = isset($stored_account->last4) ? $this->GatewayManager->systemDecrypt($stored_account->last4) : null;
+
             return [
+                'last4' => $stored_account->last4,
                 'client_reference_id' => $client_reference_id,
                 'reference_id' => $account_reference_id
             ];
