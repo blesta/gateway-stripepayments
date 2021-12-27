@@ -1183,11 +1183,16 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 [$client_reference_id],
                 $this->base_url . 'customers - retrieve'
             );
-            $this->handleApiRequest(
+            $source = $this->handleApiRequest(
                 ['Stripe\Customer', 'createSource'],
                 [($customer->id ?? $client_reference_id), ['source' => $account_info['reference_id']]],
                 $this->base_url . 'customers - createSource'
             );
+
+            // Fetch the source
+            if (isset($source->id)) {
+                $account_info['reference_id'] = $source->id;
+            }
 
             if ($this->Input->errors()) {
                 return false;
@@ -1395,7 +1400,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 unset($message_lines[$line]);
             }
         }
-        $loggable_response['message'] = trim(implode('. ', $message_lines)) . '.';
+        $loggable_response['message'] = trim(implode('. ', $message_lines), '.') . '.';
 
         return $loggable_response['message'];
     }
