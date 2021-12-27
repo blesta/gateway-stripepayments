@@ -1382,7 +1382,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     private function formatErrorMessage($loggable_response)
     {
         // Check if a language definition exists for this error message
-        $lang = Language::_('StripePayments.!error.' . $loggable_response['code'], true);
+        $lang = Language::_('StripePayments.!error.' . ($loggable_response['code'] ?? null), true);
 
         if (!empty($lang)) {
             return $lang;
