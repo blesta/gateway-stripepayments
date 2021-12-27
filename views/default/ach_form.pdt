@@ -66,17 +66,8 @@
 
     if (($status ?? 'new') == 'new') {
     ?>
-    <script src="https://js.stripe.com/v3/"></script>
+    <?php if ($load_stripe ?? false) { ?><script src="https://js.stripe.com/v3/"></script><?php } ?>
     <script>
-        // Unload duplicated instances of Stripe.js
-        $(document).ready(function() {
-            $('script[src="https://js.stripe.com/v3/"]').each(function() {
-                if ($('script[src="https://js.stripe.com/v3/"]').length > 1) {
-                    $(this).remove();
-                }
-            });
-        });
-
         // Create a Stripe client.
         var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
