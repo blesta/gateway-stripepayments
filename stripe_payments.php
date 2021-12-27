@@ -17,6 +17,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      * @var array An array of meta data for this gateway
      */
     private $meta;
+
     /**
      * @var string The base URL of API requests
      */
@@ -37,6 +38,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Load product configuration required by this module
         Configure::load('stripe_payments', dirname(__FILE__) . DS . 'config' . DS);
+
+        // Check if Stripe.js is already loaded
+        if ($this->global('stripe_js') == null) {
+            $this->global('stripe_js', false);
+        }
     }
 
     /**
@@ -243,6 +249,14 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'setup_intents - create'
         );
 
+        // Check if Stripe.js is already loaded
+        $load_stripe = false;
+        if (!$this->global('stripe_js')) {
+            $this->global('stripe_js', true);
+            $load_stripe = true;
+        }
+
+        $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
 
@@ -1082,12 +1096,20 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
+        // Check if Stripe.js is already loaded
+        $load_stripe = false;
+        if (!$this->global('stripe_js')) {
+            $this->global('stripe_js', true);
+            $load_stripe = true;
+        }
+
         // Set select options
         $holder_types = [
             'individual' => Language::_('StripePayments.ach_form.field_holder_type_individual', true),
             'company' => Language::_('StripePayments.ach_form.field_holder_type_company', true)
         ];
 
+        $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
         $this->view->set('types', $this->Accounts->getAchTypes());
@@ -1161,11 +1183,16 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 [$client_reference_id],
                 $this->base_url . 'customers - retrieve'
             );
-            $this->handleApiRequest(
+            $source = $this->handleApiRequest(
                 ['Stripe\Customer', 'createSource'],
                 [($customer->id ?? $client_reference_id), ['source' => $account_info['reference_id']]],
                 $this->base_url . 'customers - createSource'
             );
+
+            // Fetch the source
+            if (isset($source->id)) {
+                $account_info['reference_id'] = $source->id;
+            }
 
             if ($this->Input->errors()) {
                 return false;
@@ -1223,7 +1250,17 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 }
             }
 
+            // Get current account
+            Loader::loadModels($this, ['GatewayManager']);
+            Loader::loadComponents($this, ['Record']);
+            $stored_account = $this->Record->select()
+                ->from('accounts_ach')
+                ->where('reference_id', '=', $account_reference_id)
+                ->fetch();
+            $stored_account->last4 = isset($stored_account->last4) ? $this->GatewayManager->systemDecrypt($stored_account->last4) : null;
+
             return [
+                'last4' => $stored_account->last4,
                 'client_reference_id' => $client_reference_id,
                 'reference_id' => $account_reference_id
             ];
@@ -1360,7 +1397,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     private function formatErrorMessage($loggable_response)
     {
         // Check if a language definition exists for this error message
-        $lang = Language::_('StripePayments.!error.' . $loggable_response['code'], true);
+        $lang = Language::_('StripePayments.!error.' . ($loggable_response['code'] ?? ''), true);
 
         if (!empty($lang)) {
             return $lang;
@@ -1373,8 +1410,27 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 unset($message_lines[$line]);
             }
         }
-        $loggable_response['message'] = trim(implode('. ', $message_lines)) . '.';
+        $loggable_response['message'] = trim(implode('. ', $message_lines), '.') . '.';
 
         return $loggable_response['message'];
+    }
+
+    /**
+     * Defines or retrieves a global variable
+     *
+     * @param string $key The name of the global variable
+     * @param string $value The value of the global variable (optional)
+     * @return mixed The value of the global variable, null if undefined
+     */
+    private function global($key, $value = null)
+    {
+        $class = Loader::toCamelCase(get_class($this));
+        $key = $class . '.' . $key;
+
+        if (is_null($value)) {
+            return $GLOBALS[$key] ?? null;
+        } else {
+            $GLOBALS[$key] = $value;
+        }
     }
 }
