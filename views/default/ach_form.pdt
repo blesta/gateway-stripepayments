@@ -68,73 +68,76 @@
     ?>
     <?php if ($load_stripe ?? false) { ?><script src="https://js.stripe.com/v3/"></script><?php } ?>
     <script>
-        // Create a Stripe client.
-        var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
-
-        // Create an instance of Elements.
-        var elements = stripe.elements();
-
-        // Always save the bank account, one-time payments are not supported
         $(document).ready(function() {
-            $('#payment_details_ach input[name="save_details"]').prop('checked', true);
-            $('#payment_details_ach input[name="save_details"]').parent().hide();
-        });
-
-        // If payment details changed setup a new bank account
-        $('#stripe-ach-form #ach-element *').change(function() {
-            $('#stripe-ach-form #ach-errors').text('');
-            $('#stripe-ach-form #reference_id').val('');
-            $(this).blestaEnableFormSubmission($('#stripe-ach-form').closest('form'));
-        });
-
-        // Get bank account token
-        $(document).ready(function() {
+            // Load CSS
             $(this).blestaSetHeadTag("link", {media:"screen", type:"text/css", rel:"stylesheet", href: "<?php echo $this->Html->safe($this->view_dir . 'css/styles.css');?>"});
 
+            // Create a Stripe client
+            var stripe_ach = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+
+            // Always save the bank account, one-time payments are not supported
+            $(document).ready(function() {
+                $('#payment_details_ach input[name="save_details"]').prop('checked', true);
+                $('#payment_details_ach input[name="save_details"]').parent().hide();
+            });
+
+            // If payment details changed setup a new bank account
+            $('#stripe-ach-form #ach-element *').change(function() {
+                $('#stripe-ach-form #ach-errors').text('');
+                $('#stripe-ach-form #reference_id').val('');
+                $(this).blestaEnableFormSubmission($('#stripe-ach-form').closest('form'));
+            });
+
+            // Get bank account token
             $('#stripe-ach-form').closest('form').on('submit', processBankAccount);
-        });
 
-        function processBankAccount(event) {
-            // Paying with an existing payment account
-            let accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
-            // Paying with a new payment account
-            let detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
-            let accountDetails = detailsVisible && ($('#details').val() === 'ach' || $('select[name=payment_type]').val() === 'ach');
-            // Add/update only the payment account (i.e. no payment)
-            let name = $('#first_name:visible').length;
+            function processBankAccount(event) {
+                // Disable CC form
+                $('#stripe-cc-form input').attr('disabled', true);
 
-            if (accountDetails || (name && !accountVisible && !detailsVisible)) {
-                event.preventDefault();
+                // Paying with an existing payment account
+                var accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
 
-                stripe.createToken('bank_account', {
-                    country: 'US', // ACH is available only in the US
-                    currency: 'usd', // ACH only supports USD
-                    routing_number: $('#stripe-ach-form #routing_number').val(),
-                    account_number: $('#stripe-ach-form #account_number').val(),
-                    account_holder_name: $('#first_name').val() + ' ' + $('#last_name').val(),
-                    account_holder_type: $('#stripe-ach-form #holder_type').val()
-                })
-                .then(function(result) {
-                    if (result.hasOwnProperty('error')) {
-                        $('#stripe-ach-form #ach-errors').text(result.error.message);
-                    }
+                // Paying with a new payment account
+                var detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
+                var accountDetails = detailsVisible && ($('#details').val() === 'ach' || $('select[name=payment_type]').val() === 'ach');
 
-                    if (result.hasOwnProperty('token')) {
-                        // Set reference id
-                        $('#stripe-ach-form #type').val($('#stripe-ach-form #acc_type').val());
-                        $('#stripe-ach-form #reference_id').val(result.token.id);
+                // Add/update only the payment account (i.e. no payment)
+                var name = $('#first_name:visible').length;
 
-                        // Remove secure data
-                        $('#stripe-ach-form #ach-element *').attr('disabled', true);
+                if (accountDetails || (name && !accountVisible && !detailsVisible)) {
+                    event.preventDefault();
 
-                        // Submit form
-                        $('#stripe-ach-form').closest('form').off('submit', processBankAccount);
-                        $(this).blestaEnableFormSubmission($('#stripe-ach-form').closest('form'));
-                        $('#stripe-ach-form').closest('form').submit();
-                    }
-                });
+                    stripe_ach.createToken('bank_account', {
+                        country: 'US', // ACH is available only in the US
+                        currency: 'usd', // ACH only supports USD
+                        routing_number: $('#stripe-ach-form #routing_number').val(),
+                        account_number: $('#stripe-ach-form #account_number').val(),
+                        account_holder_name: $('#first_name').val() + ' ' + $('#last_name').val(),
+                        account_holder_type: $('#stripe-ach-form #holder_type').val()
+                    })
+                    .then(function(result) {
+                        if (result.hasOwnProperty('error')) {
+                            $('#stripe-ach-form #ach-errors').text(result.error.message);
+                        }
+
+                        if (result.hasOwnProperty('token')) {
+                            // Set reference id
+                            $('#stripe-ach-form #type').val($('#stripe-ach-form #acc_type').val());
+                            $('#stripe-ach-form #reference_id').val(result.token.id);
+
+                            // Remove secure data
+                            $('#stripe-ach-form #ach-element *').attr('disabled', true);
+
+                            // Submit form
+                            $('#stripe-ach-form').closest('form').off('submit', processBankAccount);
+                            $(this).blestaEnableFormSubmission($('#stripe-ach-form').closest('form'));
+                            $('#stripe-ach-form').closest('form').submit();
+                        }
+                    });
+                }
             }
-        }
+        });
     </script>
     <?php
     }
