@@ -62,7 +62,7 @@
             $('#stripe-cc-form').closest('form').on('submit', submitCard);
 
             // If payment details changed setup a new card
-            $('#payment_details, #account, #details').on('change', function() {
+            $('#payment_details, #payment_account, #details').on('change', function() {
                 $('#stripe-cc-form').closest('form').off('submit', submitCard);
                 $('#stripe-cc-form').closest('form').on('submit', submitCard);
             });
@@ -75,7 +75,7 @@
                 }
 
                 // Paying with an existing payment account
-                let accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
+                let accountVisible = ($('#payment_account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
                 // Paying with a new payment account
                 let detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
                 let ccDetails = detailsVisible && ($('#details').val() === 'cc' || $('select[name=payment_type]').val() === 'cc');

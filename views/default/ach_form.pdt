@@ -92,7 +92,7 @@
                 }
 
                 // Paying with an existing payment account
-                var accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
+                var accountVisible = ($('#payment_account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
 
                 // Paying with a new payment account
                 var detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
