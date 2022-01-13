@@ -1,5 +1,4 @@
 <div id="stripe-payment-confirmation">
-    <div id="stripe-error-box"></div>
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         if (typeof stripe === 'undefined') {
@@ -8,7 +7,7 @@
         }
 
         // Handle form submission.
-        $('#stripe-error-box').closest('form').one('submit', submitPayment);
+        $('#stripe-payment-confirmation').closest('form').one('submit', submitPayment);
 
         function submitPayment(event) {
             // Skip attempting a payment if the submission is to edit in Blesta, not submit the payment
@@ -25,22 +24,16 @@
             event.preventDefault();
             // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
             stripe.handleCardPayment('<?php echo (isset($payment_intent->client_secret) ? $this->Html->safe($payment_intent->client_secret) : null);?>', {payment_method: '<?php echo (isset($payment_intent->payment_method) ? $this->Html->safe($payment_intent->payment_method) : null);?>'}).then(function(result) {
-                if (result.error) {
-                    var errorElement = document.getElementById('stripe-error-box');
-                    errorElement.textContent = result.error.message;
-                    $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
-                } else {
-                    // Resubmit the form, bypassing this handler
-                    resubmitPaymentConfirmation();
-                }
+                // Resubmit the form, bypassing this handler
+                resubmitPaymentConfirmation();
             });
         }
 
         function resubmitPaymentConfirmation()
         {
-            $(this).blestaEnableFormSubmission($('#stripe-error-box').closest('form'));
-            $('#stripe-error-box').closest('form').off('submit', submitPayment);
-            $('#stripe-error-box').closest('form').submit();
+            $(this).blestaEnableFormSubmission($('#stripe-payment-confirmation').closest('form'));
+            $('#stripe-payment-confirmation').closest('form').off('submit', submitPayment);
+            $('#stripe-payment-confirmation').closest('form').submit();
         }
     </script>
 </div>

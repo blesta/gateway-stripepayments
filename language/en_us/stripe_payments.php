@@ -6,6 +6,7 @@ $lang['StripePayments.!error.secret_key.empty'] = 'Please enter a Secret Key.';
 $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stripe API using the given Secret Key.';
 
 $lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify your bank account before you can use it to make a payment.';
+$lang['StripePayments.!error.invalid_request_error'] = 'The payment gateway returned an error when processing the request.';
 
 $lang['StripePayments.name'] = 'Stripe Payments';
 $lang['StripePayments.description'] = 'Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe';
@@ -28,6 +29,10 @@ $lang['StripePayments.publishable_key'] = 'API Publishable Key';
 $lang['StripePayments.secret_key'] = 'API Secret Key';
 $lang['StripePayments.tooltip_publishable_key'] = 'Your API Publishable Key is specific to either live or test mode. Be sure you are using the correct key.';
 $lang['StripePayments.tooltip_secret_key'] = 'Your API Secret Key is specific to either live or test mode. Be sure you are using the correct key.';
+
+$lang['StripePayments.webhook'] = 'Stripe Webhook';
+$lang['StripePayments.webhook_note'] = 'It is recommended to configure the following url as a Webhook for "payment_intent" events in your Stripe account.';
+
 
 $lang['StripePayments.heading_migrate_accounts'] = 'Migrate Old Payment Accounts';
 $lang['StripePayments.text_accounts_remaining'] = 'Accounts Remaining: %1$s'; // Where %1$s is the number of accounts yet to be migrated
