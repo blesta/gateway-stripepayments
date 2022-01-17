@@ -1123,6 +1123,30 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
+    public function buildAchVerificationForm(array $vars = [])
+    {
+        return null;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function requiresAchVerification()
+    {
+        return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function verifyAch(array $vars, $client_reference_id = null, $account_reference_id = null)
+    {
+
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function processAch(array $account_info, $amount, array $invoice_amounts = null)
     {
         $this->Input->setErrors($this->getCommonError('unsupported'));
