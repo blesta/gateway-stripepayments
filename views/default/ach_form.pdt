@@ -82,6 +82,10 @@
                 $(this).blestaEnableFormSubmission($('#stripe-ach-form').closest('form'));
             });
 
+            // Always save the bank account, one-time payments are not supported
+            $('#payment_details_ach input[name="save_details"]').prop('checked', true);
+            $('#payment_details_ach input[name="save_details"]').parent().hide();
+
             // Get bank account token
             $('#stripe-ach-form').closest('form').on('submit', processBankAccount);
 
@@ -103,10 +107,6 @@
 
                 if (accountDetails || (name && !accountVisible && !detailsVisible)) {
                     event.preventDefault();
-
-                    // Always save the bank account, one-time payments are not supported
-                    $('#payment_details_ach input[name="save_details"]').prop('checked', true);
-                    $('#payment_details_ach input[name="save_details"]').parent().hide();
 
                     // Create bank account token
                     stripe_ach.createToken('bank_account', {

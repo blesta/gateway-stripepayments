@@ -1053,14 +1053,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
-    public function requiresAchStorage()
-    {
-        return true;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
     public function buildAchForm($account_info = null)
     {
         // Load the view into this object, so helpers can be automatically added to the view
@@ -1123,6 +1115,14 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
+    public function requiresAchStorage()
+    {
+        return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function buildAchVerificationForm(array $vars = [])
     {
         return null;
@@ -1134,14 +1134,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     public function requiresAchVerification()
     {
         return true;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function verifyAch(array $vars, $client_reference_id = null, $account_reference_id = null)
-    {
-
     }
 
     /**
@@ -1247,63 +1239,56 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function updateAch(array $account_info, array $contact, $client_reference_id, $account_reference_id)
     {
-        // Verify the bank account if the reference_id matches the account info
-        if (($account_info['reference_id'] ?? '') == $account_reference_id) {
-            // Get bank account
-            $account = $this->handleApiRequest(
-                ['Stripe\Customer', 'retrieveSource'],
-                [($customer->id ?? $client_reference_id), $account_info['reference_id']],
-                $this->base_url . 'customers - retrieveSource'
-            );
+        // Add a new bank account to the same client
+        $account_data = $this->storeAch($account_info, $contact, $client_reference_id);
 
-            if (!empty($account['error'])) {
-                // Ignore any errors caused by attempting to fetch the old account
-                $this->Input->setErrors([]);
-            }
-
-            // Verify bank account
-            if (isset($account->customer) && $account->customer == $client_reference_id) {
-                try {
-                    $account->verify(['amounts' => [($_POST['first_deposit'] ?? 0), ($_POST['second_deposit'] ?? 0)]]);
-                } catch (Throwable $e) {
-                    $this->Input->setErrors(['verify' => ['error' => $e->getMessage()]]);
-                }
-
-                if ($this->Input->errors()) {
-                    return false;
-                }
-            }
-
-            // Get current account
-            Loader::loadModels($this, ['GatewayManager']);
-            Loader::loadComponents($this, ['Record']);
-            $stored_account = $this->Record->select()
-                ->from('accounts_ach')
-                ->where('reference_id', '=', $account_reference_id)
-                ->fetch();
-            $stored_account->last4 = isset($stored_account->last4) ? $this->GatewayManager->systemDecrypt($stored_account->last4) : null;
-
-            return [
-                'last4' => $stored_account->last4,
-                'client_reference_id' => $client_reference_id,
-                'reference_id' => $account_reference_id
-            ];
-        } else {
-            // Add a new bank account to the same client
-            $account_data = $this->storeAch($account_info, $contact, $client_reference_id);
-
-            if ($this->Input->errors()) {
-                return false;
-            }
-
-            // Remove the old payment account if possible
-            if (false === $this->removeAch($client_reference_id, $account_reference_id)) {
-                // Ignore any errors caused by attempting to remove the old account
-                $this->Input->setErrors([]);
-            }
-
-            return $account_data;
+        if ($this->Input->errors()) {
+            return false;
         }
+
+        // Remove the old payment account if possible
+        if (false === $this->removeAch($client_reference_id, $account_reference_id)) {
+            // Ignore any errors caused by attempting to remove the old account
+            $this->Input->setErrors([]);
+        }
+
+        return $account_data;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function verifyAch(array $vars, $client_reference_id = null, $account_reference_id = null)
+    {
+        // Get bank account
+        $account = $this->handleApiRequest(
+            ['Stripe\Customer', 'retrieveSource'],
+            [$client_reference_id, $account_reference_id],
+            $this->base_url . 'customers - retrieveSource'
+        );
+
+        if (!empty($account['error'])) {
+            // Ignore any errors caused by attempting to fetch the old account
+            $this->Input->setErrors([]);
+        }
+
+        // Verify bank account
+        if (isset($account->customer) && $account->customer == $client_reference_id) {
+            try {
+                $account->verify(['amounts' => [($vars['first_deposit'] ?? 0), ($vars['second_deposit'] ?? 0)]]);
+            } catch (Throwable $e) {
+                $this->Input->setErrors(['verify' => ['error' => $e->getMessage()]]);
+            }
+        }
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        return [
+            'client_reference_id' => $client_reference_id,
+            'reference_id' => $account_reference_id
+        ];
     }
 
     /**
