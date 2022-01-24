@@ -17,7 +17,6 @@ $lang['StripePayments.ach_form.field_holder_type_individual'] = 'Individual';
 $lang['StripePayments.ach_form.field_holder_type_company'] = 'Company';
 $lang['StripePayments.ach_form.field_account_number'] = 'Account Number';
 $lang['StripePayments.ach_form.field_routing_number'] = 'Routing Number';
-$lang['StripePayments.ach_form.field_notice'] = 'You will need to verify this account before you can use it to make a payment.';
 
 $lang['StripePayments.ach_form.verification_notice'] = 'We sent two small deposits to this bank account. To verify this account, please confirm the amounts of these deposits.';
 $lang['StripePayments.ach_form.field_first_deposit'] = 'First Deposit';
