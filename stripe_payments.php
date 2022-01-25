@@ -381,7 +381,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             ];
         } else {
             // Refund a previous charge
-            $response = $this->refundCc($reference_id, $transaction_id, null);
+            $response = $this->refundTransaction($reference_id, $transaction_id, null);
             $response['status'] = 'void';
 
             // refund must be successful
@@ -1133,7 +1133,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function voidAch($reference_id, $transaction_id)
     {
-        return $this->voidTransaction($reference_id, $transaction_id);
+        $this->Input->setErrors($this->getCommonError('unsupported'));
     }
 
     /**
@@ -1318,6 +1318,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'amount' => $this->formatAmount($amount, ($this->currency ?? null)),
             'currency' => ($this->currency ?? null),
             'customer' => $client_reference_id,
+            'source' => $account_reference_id,
             'description' => $this->getChargeDescription($invoice_amounts)
         ];
 
@@ -1350,8 +1351,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         return [
             'status' => $status,
-            'reference_id' => ($payment->id ?? null),
-            'transaction_id' => ($payment->balance_transaction ?? null),
+            'reference_id' => ($payment->balance_transaction ?? null),
+            'transaction_id' => ($payment->id ?? null),
             'message' => ($message ?? null)
         ];
     }
@@ -1366,8 +1367,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $transaction_id
     )
     {
-        // Same as refund
-        $this->voidTransaction($transaction_reference_id, $transaction_id);
+        $this->Input->setErrors($this->getCommonError('unsupported'));
     }
 
     /**
