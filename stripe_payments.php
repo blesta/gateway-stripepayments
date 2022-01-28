@@ -1131,14 +1131,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
-    public function requiresAchVerification()
-    {
-        return true;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
     public function processAch(array $account_info, $amount, array $invoice_amounts = null)
     {
         $this->Input->setErrors($this->getCommonError('unsupported'));
@@ -1267,9 +1259,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'customers - retrieveSource'
         );
 
-        if (!empty($account['error'])) {
-            // Ignore any errors caused by attempting to fetch the old account
-            $this->Input->setErrors([]);
+        if ($this->Input->errors()) {
+            return false;
         }
 
         // Verify bank account
