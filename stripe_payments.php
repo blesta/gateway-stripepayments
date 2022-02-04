@@ -1360,7 +1360,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             && isset($payment->status)
             && $payment->status === 'pending'
         ) {
-            $status = 'approved';
+            $status = 'pending';
         } else {
             $message = isset($payment->error)
                 ? ($payment->error->message ?? null)
