@@ -21,7 +21,7 @@
     </div>
     <div class="pad">
         <p><?php $this->_('StripePayments.webhook_note'); ?></p>
-        <code><?php echo Configure::get('Blesta.gw_callback_url') . Configure::get('Blesta.company_id') . '/stripe_payments/'; ?></code>
+        <code><?php echo Configure::get('Blesta.mgw_callback_url') . Configure::get('Blesta.company_id') . '/stripe_payments/'; ?></code>
     </div>
 
     <?php

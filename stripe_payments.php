@@ -1486,7 +1486,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         // Validate only payment intent events
-        if ($payload->data->object->object !== 'payment_intent') {
+        if ($payload->data->object->object !== 'payment_intent' || $payload->data->object->object !== 'charge') {
             return false;
         }
 
@@ -1526,7 +1526,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'client_id' => $transaction->client_id,
             'amount' => $this->formatAmount(
-                $payload->data->object->amount ?? 0,
+                $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0,
                 strtoupper($payload->data->object->currency ?? ''),
                 'from'
             ),
