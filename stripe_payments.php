@@ -1486,17 +1486,18 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         // Validate only payment intent events
-        if ($payload->data->object->object !== 'payment_intent' || $payload->data->object->object !== 'charge') {
+        if ($payload->data->object->object !== 'charge') {
             return false;
         }
 
         // Fetch client
         Loader::loadComponents($this, ['Record']);
+        $charge_id = $payload->data->object->id ?? $payload->data->object->charges->data[0]->id ?? null;
         $transaction = $this->Record->select()
             ->from('transactions')
                 ->open()
-                    ->where('transactions.transaction_id', '=', $payload->data->object->charges->data[0]->id ?? '')
-                    ->orWhere('transactions.reference_id', '=', $payload->data->object->id ?? '')
+                    ->where('transactions.transaction_id', '=', $charge_id)
+                    ->orWhere('transactions.reference_id', '=', $charge_id)
                 ->close()
             ->fetch();
 
@@ -1510,6 +1511,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         if (isset($stripe_status)) {
             switch ($stripe_status) {
                 case 'requires_capture':
+                case 'pending':
                 case 'requires_payment_method':
                     $status = 'pending';
                     break;
@@ -1532,8 +1534,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             ),
             'currency' => strtoupper($payload->data->object->currency) ?? null,
             'status' => $status,
-            'reference_id' => $payload->data->object->id ?? null,
-            'transaction_id' => $payload->data->object->charges->data[0]->id ?? null
+            'reference_id' => $transaction->reference_id,
+            'transaction_id' => $transaction->transaction_id
         ];
     }
 }
