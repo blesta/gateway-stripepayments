@@ -799,6 +799,20 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'payment_intents - retrieve'
         );
 
+        if (!empty($payment_intent->charges->data[0]->failure_code)) {
+            return [
+                'status' => in_array(
+                    $payment_intent->charges->data[0]->failure_code,
+                    ['card_declined', 'bank_account_declined']
+                )
+                    ? 'declined'
+                    : 'error',
+                'reference_id' => ($payment_intent->id ?? null),
+                'transaction_id' => ($payment_intent->charges->data[0]->id ?? null),
+                'message' => $payment_intent->charges->data[0]->failure_message
+            ];
+        }
+
         $captured_payment_intent = $this->handleApiRequest(
             function ($payment_intent) {
                 return $payment_intent->capture();
@@ -955,15 +969,20 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      *
      * @param float $amount
      * @param string $currency
+     * @param string $direction
      * @return int The amount in cents
      */
-    private function formatAmount($amount, $currency)
+    private function formatAmount($amount, $currency, $direction = 'to')
     {
         $non_decimal_currencies = ['BIF', 'CLP', 'DJF', 'GNF', 'JPY',
             'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'VUV', 'XAF', 'XOF', 'XPF'];
 
         if (is_numeric($amount) && !in_array($currency, $non_decimal_currencies)) {
-            $amount *= 100;
+            if ($direction == 'to') {
+                $amount *= 100;
+            } else {
+                $amount /= 100;
+            }
         }
         return (int)round($amount);
     }
@@ -1397,7 +1416,10 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     private function formatErrorMessage($loggable_response)
     {
         // Check if a language definition exists for this error message
-        $lang = Language::_('StripePayments.!error.' . ($loggable_response['code'] ?? ''), true);
+        $lang = Language::_(
+            'StripePayments.!error.' . ($loggable_response['code'] ?? $loggable_response['type'] ?? ''),
+            true
+        );
 
         if (!empty($lang)) {
             return $lang;
@@ -1432,5 +1454,88 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         } else {
             $GLOBALS[$key] = $value;
         }
+    }
+
+    /**
+     * Validates the incoming POST/GET response from the gateway to ensure it is
+     * legitimate and can be trusted.
+     *
+     * @param array $get The GET data for this request
+     * @param array $post The POST data for this request
+     * @return array An array of transaction data, sets any errors using Input if the data fails to validate
+     *  - client_id The ID of the client that attempted the payment
+     *  - amount The amount of the payment
+     *  - currency The currency of the payment
+     *  - invoices An array of invoices and the amount the payment should be applied to (if any) including:
+     *      - id The ID of the invoice to apply to
+     *      - amount The amount to apply to the invoice
+     *  - status The status of the transaction (approved, declined, void, pending, reconciled, refunded, returned)
+     *  - reference_id The reference ID for gateway-only use with this transaction (optional)
+     *  - transaction_id The ID returned by the gateway to identify this transaction
+     *  - parent_transaction_id The ID returned by the gateway to identify this
+     *      transaction's original transaction (in the case of refunds)
+     */
+    public function validate(array $get, array $post)
+    {
+        // Get event payload
+        $payload = @file_get_contents('php://input');
+        if (!empty($payload)) {
+            $payload = json_decode($payload);
+        } else {
+            $payload = (object) [];
+        }
+
+        // Validate only payment intent events
+        if ($payload->data->object->object !== 'charge') {
+            return false;
+        }
+
+        // Fetch client
+        Loader::loadComponents($this, ['Record']);
+        $charge_id = $payload->data->object->id ?? $payload->data->object->charges->data[0]->id ?? null;
+        $transaction = $this->Record->select()
+            ->from('transactions')
+                ->open()
+                    ->where('transactions.transaction_id', '=', $charge_id)
+                    ->orWhere('transactions.reference_id', '=', $charge_id)
+                ->close()
+            ->fetch();
+
+        if (empty($transaction->client_id)) {
+            return false;
+        }
+
+        // Get event status
+        $status = 'error';
+        $stripe_status = $payload->data->object->charges->data[0]->status ?? $payload->data->object->status ?? 'failed';
+        if (isset($stripe_status)) {
+            switch ($stripe_status) {
+                case 'requires_capture':
+                case 'pending':
+                case 'requires_payment_method':
+                    $status = 'pending';
+                    break;
+                case 'canceled':
+                case 'failed':
+                    $status = 'decline';
+                    break;
+                case 'succeeded':
+                    $status = 'approved';
+                    break;
+            }
+        }
+
+        return [
+            'client_id' => $transaction->client_id,
+            'amount' => $this->formatAmount(
+                $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0,
+                strtoupper($payload->data->object->currency ?? ''),
+                'from'
+            ),
+            'currency' => strtoupper($payload->data->object->currency) ?? null,
+            'status' => $status,
+            'reference_id' => $transaction->reference_id,
+            'transaction_id' => $transaction->transaction_id
+        ];
     }
 }
