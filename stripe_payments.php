@@ -438,14 +438,20 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 );
             }
 
-            return;
+            return [
+                'status' => 'error',
+                'reference_id' => $reference_id,
+                'transaction_id' => $transaction_id,
+                'message' => $refund->error->message ?? null
+            ];
         }
 
         // Return formatted response
         return [
             'status' => 'refunded',
             'reference_id' => $reference_id,
-            'transaction_id' => $transaction_id
+            'transaction_id' => $transaction_id,
+            'message' => $refund->error->message ?? null
         ];
     }
 
@@ -714,8 +720,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'status' => $status,
             'reference_id' => null,
-            'transaction_id' => (isset($payment->charges->data[0]->id) ? $payment->charges->data[0]->id : null),
-            'message' => (isset($message) ? $message : null)
+            'transaction_id' => ($payment->charges->data[0]->id ?? null),
+            'message' => ($message ?? null)
         ];
     }
 
@@ -1535,7 +1541,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'currency' => strtoupper($payload->data->object->currency) ?? null,
             'status' => $status,
             'reference_id' => $transaction->reference_id,
-            'transaction_id' => $transaction->transaction_id
+            'transaction_id' => $transaction->transaction_id,
+            'message' => $payload->data->object->failure_message ?? null
         ];
     }
 }
