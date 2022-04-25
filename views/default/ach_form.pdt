@@ -45,10 +45,12 @@
             $this->Form->fieldText('routing_number', null, ['id' => 'routing_number', 'maxlength' => '9', 'placeholder' => $this->_('StripePayments.ach_form.field_routing', true)]);
             ?>
         </div>
-
         <?php
         }
         ?>
+
+        <p class="mb-0 mt-2"><small><?php $this->_('StripePayments.ach_form.mandate_authorization', false, ($company->name ?? ''));?></small></p>
+        <p id="future_usage_mandate" class="mt-0 mt-2"><small><?php $this->_('StripePayments.ach_form.mandate_future_usage', false, ($company->name ?? ''));?></small></p>
     </div>
 
     <!-- Used to display form errors. -->

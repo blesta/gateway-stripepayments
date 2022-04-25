@@ -1082,7 +1082,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         );
 
         // Load the models and helpers required for this view
-        Loader::loadModels($this, ['Accounts']);
+        Loader::loadModels($this, ['Accounts', 'Companies']);
         Loader::loadHelpers($this, ['Form', 'Html']);
 
         // Declare to Stripe the possibility of us creating a bank account PaymentMethod through this page
@@ -1127,6 +1127,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('status', $status);
         $this->view->set('holder_types', $holder_types);
         $this->view->set('account_info', $account_info);
+        $this->view->set('company', $this->Companies->get(Configure::get('Blesta.company_id')));
 
         return $this->view->fetch();
     }
