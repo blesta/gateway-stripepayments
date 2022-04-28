@@ -23,6 +23,9 @@ $lang['StripePayments.ach_form.verification_notice'] = 'We sent two small deposi
 $lang['StripePayments.ach_form.field_first_deposit'] = 'First Deposit';
 $lang['StripePayments.ach_form.field_second_deposit'] = 'Second Deposit';
 
+$lang['StripePayments.ach_form.mandate_authorization'] = 'By submitting this form, you authorize %1$s to debit the bank account specified above for any amount owed for charges arising from your use of %1$s services and/or purchase of products from %1$s, pursuant to %1$s website and terms, until this authorization is revoked. You may amend or cancel this authorization at any time by providing notice to %1$s with 30 (thirty) days notice.';
+$lang['StripePayments.ach_form.mandate_future_usage'] = 'If you use %1$s services or purchase additional products periodically pursuant to %1$s terms, you authorize %1$s to debit your bank account periodically. Payments that fall outside of the regular debits authorized above will only be debited after your authorization is obtained.';
+
 // Settings
 $lang['StripePayments.publishable_key'] = 'API Publishable Key';
 $lang['StripePayments.secret_key'] = 'API Secret Key';
