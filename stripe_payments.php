@@ -451,7 +451,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'status' => 'refunded',
             'reference_id' => $reference_id,
             'transaction_id' => $transaction_id,
-            'message' => $refund->error->message ?? null
+            'message' => null
         ];
     }
 
