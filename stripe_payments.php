@@ -438,20 +438,14 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 );
             }
 
-            return [
-                'status' => 'error',
-                'reference_id' => $reference_id,
-                'transaction_id' => $transaction_id,
-                'message' => $refund->error->message ?? null
-            ];
+            return false;
         }
 
         // Return formatted response
         return [
             'status' => 'refunded',
             'reference_id' => $reference_id,
-            'transaction_id' => $transaction_id,
-            'message' => null
+            'transaction_id' => $transaction_id
         ];
     }
 
