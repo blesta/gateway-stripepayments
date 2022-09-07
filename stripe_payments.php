@@ -619,7 +619,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Set any errors
         if (!empty($errors)) {
-            $this->Input->setErrors($errors);
+            $this->Input->setErrors($this->getCommonError('general'));
         }
 
         // Log the request
