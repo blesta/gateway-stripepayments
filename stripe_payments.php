@@ -625,7 +625,16 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Log the request
         $this->logRequest($log_url, $params, $loggable_response);
 
-        return empty($errors) ? $response : $loggable_response;
+        if (empty($response)) {
+            $response = (object) $loggable_response;
+            $response->status = 'error';
+
+            if (is_string($loggable_response['error'])) {
+                $response->error = (object) ['message' => $loggable_response['error']];
+            }
+        }
+
+        return $response;
     }
 
     /**
@@ -762,7 +771,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     $status = 'pending';
                     break;
                 case 'canceled':
-                    $status = 'decline';
+                    $status = 'declined';
                     break;
                 case 'succeeded':
                     $status = 'approved';
@@ -831,25 +840,25 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     $status = 'pending';
                     break;
                 case 'canceled':
-                    $status = 'decline';
+                case 'requires_payment_method':
+                    $status = 'declined';
                     break;
                 case 'succeeded':
                     $status = 'approved';
                     break;
-                case 'requires_payment_method':
                 case 'requires_source':
                 default:
                     $message = isset($captured_payment_intent->error)
-                        ? (isset($captured_payment_intent->error->message) ? $captured_payment_intent->error->message : null)
+                        ? ($captured_payment_intent->error->message ?? null)
                         : '';
             }
         }
 
         return [
             'status' => $status,
-            'reference_id' => (isset($captured_payment_intent->id) ? $captured_payment_intent->id : null),
-            'transaction_id' => (isset($captured_payment_intent->charges->data[0]->id) ? $captured_payment_intent->charges->data[0]->id : null),
-            'message' => (isset($message) ? $message : null)
+            'reference_id' => ($captured_payment_intent->id ?? null),
+            'transaction_id' => ($captured_payment_intent->charges->data[0]->id ?? null),
+            'message' => ($message ?? null)
         ];
     }
 
@@ -1518,7 +1527,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     break;
                 case 'canceled':
                 case 'failed':
-                    $status = 'decline';
+                    $status = 'declined';
                     break;
                 case 'succeeded':
                     $status = 'approved';
