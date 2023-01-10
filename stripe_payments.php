@@ -682,8 +682,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     {
         // Charge the given PaymentMethod through Stripe
         $charge = [
-            'amount' => $this->formatAmount($amount, (isset($this->currency) ? $this->currency : null)),
-            'currency' => (isset($this->currency) ? $this->currency : null),
+            'amount' => $this->formatAmount($amount, ($this->currency ?? null)),
+            'currency' => ($this->currency ?? null),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
             'description' => $this->getChargeDescription($invoice_amounts),
@@ -704,20 +704,21 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Set whether there was an error
         $status = 'error';
-        if (isset($payment['error'])
-            && (isset($payment['error']['code']) ? $payment['error']['code'] : null) === 'card_declined'
+        if (
+            (isset($payment->error) || isset($payment['error']))
+            && ($payment->error->code ?? $payment['error']['code'] ?? null) === 'card_declined'
         ) {
             $status = 'declined';
-        } elseif (!isset($payment->error)
+        } elseif (
+            (!isset($payment->error) && !isset($payment['error']))
             && empty($errors)
-            && isset($payment->status)
-            && $payment->status === 'succeeded'
+            && ($payment->status ?? $payment['status'] ?? null) === 'succeeded'
         ) {
             $status = 'approved';
         } else {
-            $message = isset($payment->error)
-                ? (isset($payment->error->message) ? $payment->error->message : null)
-                : (isset($payment['error']['message']) ? $payment['error']['message'] : '');
+            $message = (is_object($payment) && isset($payment->error))
+                ? ($payment->error->message ?? null)
+                : ((is_array($payment) && isset($payment['error']['message'])) ? $payment['error']['message'] : null);
         }
 
         return [
