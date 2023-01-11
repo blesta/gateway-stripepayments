@@ -705,8 +705,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Set whether there was an error
         $status = 'error';
         if (
-            (isset($payment->error) || isset($payment['error']))
-            && ($payment->error->code ?? $payment['error']['code'] ?? null) === 'card_declined'
+            (is_object($payment) && isset($payment->error) && (($payment->error->code ?? null) === 'card_declined'))
+            || (is_array($payment)
+                && isset($payment['error'])
+                && (($payment['error']['code'] ?? null) === 'card_declined')
+            )
         ) {
             $status = 'declined';
         } elseif (
