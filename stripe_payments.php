@@ -727,7 +727,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'status' => $status,
             'reference_id' => null,
-            'transaction_id' => ($payment->latest_charge->id ?? null),
+            'transaction_id' => ($payment->latest_charge ?? null),
             'message' => ($message ?? null)
         ];
     }
@@ -821,7 +821,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     ? 'declined'
                     : 'error',
                 'reference_id' => ($payment_intent->id ?? null),
-                'transaction_id' => ($payment_intent->latest_charge->id ?? null),
+                'transaction_id' => ($payment_intent->latest_charge ?? null),
                 'message' => $payment_intent->latest_charge->failure_message
             ];
         }
@@ -861,7 +861,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'status' => $status,
             'reference_id' => ($captured_payment_intent->id ?? null),
-            'transaction_id' => ($captured_payment_intent->latest_charge->id ?? null),
+            'transaction_id' => ($captured_payment_intent->latest_charge ?? null),
             'message' => ($message ?? null)
         ];
     }
@@ -1509,7 +1509,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Fetch client
         Loader::loadComponents($this, ['Record']);
-        $charge_id = $payload->data->object->id ?? $payload->data->object->latest_charge->id ?? null;
+        $charge_id = $payload->data->object->id ?? $payload->data->object->latest_charge ?? null;
         $transaction = $this->Record->select()
             ->from('transactions')
                 ->open()
