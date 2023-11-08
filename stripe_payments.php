@@ -704,30 +704,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Set whether there was an error
         $status = 'error';
-        if (
-            (is_object($payment) && isset($payment->error) && (($payment->error->code ?? null) === 'card_declined'))
-            || (is_array($payment)
-                && isset($payment['error'])
-                && (($payment['error']['code'] ?? null) === 'card_declined')
-            )
-        ) {
+        $payment = json_decode(json_encode($payment), true);
+        if (isset($payment['error']) && (($payment['error']['code'] ?? null) === 'card_declined')) {
             $status = 'declined';
-        } elseif (
-            (!isset($payment->error) && !isset($payment['error']))
-            && empty($errors)
-            && ($payment->status ?? $payment['status'] ?? null) === 'succeeded'
-        ) {
+        } elseif ((!isset($payment['error'])) && empty($errors) && ($payment['status'] ?? null) === 'succeeded') {
             $status = 'approved';
         } else {
-            $message = (is_object($payment) && isset($payment->error))
-                ? ($payment->error->message ?? null)
-                : ((is_array($payment) && isset($payment['error']['message'])) ? $payment['error']['message'] : null);
+            $message = $payment['error']['message'] ?? null;
         }
 
         return [
             'status' => $status,
             'reference_id' => null,
-            'transaction_id' => ($payment->charges->data[0]->id ?? null),
+            'transaction_id' => $payment['latest_charge'] ?? null,
             'message' => ($message ?? null)
         ];
     }
