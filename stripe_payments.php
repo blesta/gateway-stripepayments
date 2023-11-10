@@ -801,17 +801,22 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'payment_intents - retrieve'
         );
 
-        if (!empty($payment_intent->charges->data[0]->failure_code)) {
+        $latest_charge = $this->handleApiRequest(
+                ['Stripe\Charge', 'retrieve'],
+                [$payment_intent->latest_charge],
+                $this->base_url . 'charge - retrieve'
+            );
+        if (!empty($latest_charge->failure_code)) {
             return [
                 'status' => in_array(
-                    $payment_intent->charges->data[0]->failure_code,
+                    $latest_charge->failure_code,
                     ['card_declined', 'bank_account_declined']
                 )
                     ? 'declined'
                     : 'error',
                 'reference_id' => ($payment_intent->id ?? null),
-                'transaction_id' => ($payment_intent->charges->data[0]->id ?? null),
-                'message' => $payment_intent->charges->data[0]->failure_message
+                'transaction_id' => ($payment_intent->latest_charge ?? null),
+                'message' => $latest_charge->failure_message
             ];
         }
 
@@ -850,7 +855,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'status' => $status,
             'reference_id' => ($captured_payment_intent->id ?? null),
-            'transaction_id' => ($captured_payment_intent->charges->data[0]->id ?? null),
+            'transaction_id' => ($captured_payment_intent->latest_charge ?? null),
             'message' => ($message ?? null)
         ];
     }
@@ -909,6 +914,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Include identifying information about this being a gateway for Blesta
         Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
+
+        // Set API version
+        Stripe\Stripe::setApiVersion('2023-10-16');
     }
 
     /**
@@ -1495,7 +1503,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Fetch client
         Loader::loadComponents($this, ['Record']);
-        $charge_id = $payload->data->object->id ?? $payload->data->object->charges->data[0]->id ?? null;
+        $charge_id = $payload->data->object->id ?? $payload->data->object->latest_charge ?? null;
         $transaction = $this->Record->select()
             ->from('transactions')
                 ->open()
@@ -1503,6 +1511,12 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     ->orWhere('transactions.reference_id', '=', $charge_id)
                 ->close()
             ->fetch();
+        
+        $latest_charge = $this->handleApiRequest(
+                ['Stripe\Charge', 'retrieve'],
+                [$charge_id],
+                $this->base_url . 'charge - retrieve'
+            );
 
         if (empty($transaction->client_id)) {
             return false;
@@ -1510,7 +1524,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Get event status
         $status = 'error';
-        $stripe_status = $payload->data->object->charges->data[0]->status ?? $payload->data->object->status ?? 'failed';
+        $stripe_status = $latest_charge->status ?? $payload->data->object->status ?? 'failed';
         if (isset($stripe_status)) {
             switch ($stripe_status) {
                 case 'requires_capture':
