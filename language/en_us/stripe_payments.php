@@ -29,6 +29,12 @@ $lang['StripePayments.ach_form.mandate_future_usage'] = 'If you use %1$s service
 // Settings
 $lang['StripePayments.publishable_key'] = 'API Publishable Key';
 $lang['StripePayments.secret_key'] = 'API Secret Key';
+$lang['StripePayments.request_three_d_secure'] = '3D Secure Authentication Flow';
+$lang['StripePayments.request_three_d_secure_automatic'] = 'Allow Stripe to determine when to present a 3D Secure challenge';
+$lang['StripePayments.request_three_d_secure_frictionless'] = 'Present 3D Secure challenge whenever a client saves a payment method or processes an unstored payment method';
+$lang['StripePayments.request_three_d_secure_challenge'] = 'Present 3D Secure challenge whenever a client saves a payment method or processes a payment method (stored or unstored)';
+$lang['StripePayments.request_three_d_secure_note'] = 'If you are a Stripe user based in India, before saving a new card with Stripe you must always perform 3D Secure (3DS) authentication.';
+
 $lang['StripePayments.tooltip_publishable_key'] = 'Your API Publishable Key is specific to either live or test mode. Be sure you are using the correct key.';
 $lang['StripePayments.tooltip_secret_key'] = 'Your API Secret Key is specific to either live or test mode. Be sure you are using the correct key.';
 

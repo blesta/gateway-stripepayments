@@ -3,17 +3,37 @@
 		<li>
 			<?php
             $this->Form->label($this->_('StripePayments.publishable_key', true));
-            $this->Form->fieldText('publishable_key', (isset($meta['publishable_key']) ? $meta['publishable_key'] : null));
+            $this->Form->fieldText('publishable_key', ($meta['publishable_key'] ?? null));
             ?>
 			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('StripePayments.tooltip_publishable_key');?></div></span>
 		</li>
 		<li>
 			<?php
             $this->Form->label($this->_('StripePayments.secret_key', true));
-            $this->Form->fieldText('secret_key', (isset($meta['secret_key']) ? $meta['secret_key'] : null));
+            $this->Form->fieldText('secret_key', ($meta['secret_key'] ?? null));
             ?>
 			<span class="tooltip"><?php $this->_('AppController.tooltip.text');?><div><?php $this->_('StripePayments.tooltip_secret_key');?></div></span>
 		</li>
+        <li>
+            <?php
+            $this->Form->label($this->_('StripePayments.request_three_d_secure', true));
+
+            $this->Form->fieldRadio('request_three_d_secure', 'automatic', (($meta['request_three_d_secure'] ?? 'automatic') == 'automatic'), ['id'=>'request_three_d_secure_automatic']);
+            $this->Form->label($this->_('StripePayments.request_three_d_secure_automatic', true), 'request_three_d_secure_automatic', ['class'=>'inline']);
+            ?>
+            <br />
+            <?php
+            $this->Form->fieldRadio('request_three_d_secure', 'frictionless', (($meta['request_three_d_secure'] ?? 'both') == 'frictionless'), ['id'=>'request_three_d_secure_frictionless']);
+            $this->Form->label($this->_('StripePayments.request_three_d_secure_frictionless', true), 'request_three_d_secure_frictionless', ['class'=>'inline']);
+            ?>
+            <br />
+            <?php
+            $this->Form->fieldRadio('request_three_d_secure', 'challenge', (($meta['request_three_d_secure'] ?? 'automatic') == 'challenge'), ['id'=>'request_three_d_secure_challenge']);
+            $this->Form->label($this->_('StripePayments.request_three_d_secure_challenge', true), 'request_three_d_secure_challenge', ['class'=>'inline']);
+            ?>
+
+            <div class="p-2"><?php $this->_('StripePayments.request_three_d_secure_note'); ?></div>
+        </li>
 	</ul>
 
     <div class="title_row">
@@ -27,11 +47,11 @@
     <?php
     if ($legacy_stripe_installed) {
     ?>
-    <p><h1><?php $this->_('StripePayments.heading_migrate_accounts');?></h1></p>
-    <section class="error_section"><article class="error_box alert"><i class="fas fa-fw fa-exclamation-triangle"></i> <?php $this->_('StripePayments.warning_migrate_accounts');?></article></section>
-    <p><?php $this->_('StripePayments.text_migrate_accounts', false, (isset($batch_size) ? $batch_size : 0));?></p>
-    <p><?php $this->_('StripePayments.text_accounts_remaining', false, (isset($accounts_remaining) ? $accounts_remaining : 0));?></p>
-    <?php $this->Form->fieldSubmit('migrate_accounts', $this->_('StripePayments.migrate_accounts', true), ['class' => 'btn btn-default']);?>
+        <p><h1><?php $this->_('StripePayments.heading_migrate_accounts');?></h1></p>
+        <section class="error_section"><article class="error_box alert"><i class="fas fa-fw fa-exclamation-triangle"></i> <?php $this->_('StripePayments.warning_migrate_accounts');?></article></section>
+        <p><?php $this->_('StripePayments.text_migrate_accounts', false, (isset($batch_size) ? $batch_size : 0));?></p>
+        <p><?php $this->_('StripePayments.text_accounts_remaining', false, (isset($accounts_remaining) ? $accounts_remaining : 0));?></p>
+        <?php $this->Form->fieldSubmit('migrate_accounts', $this->_('StripePayments.migrate_accounts', true), ['class' => 'btn btn-default']);?>
     <?php
     }
     ?>

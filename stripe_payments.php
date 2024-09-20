@@ -680,12 +680,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $customer_present = false
     )
     {
+        // Set 3DS authentication method
+        $this->meta['request_three_d_secure'] = $this->meta['request_three_d_secure'] ?? 'automatic';
+        if ($this->meta['request_three_d_secure'] == 'frictionless') {
+            $this->meta['request_three_d_secure'] = is_null($client_reference_id) ? 'challenge' : 'automatic';
+        }
+
         // Charge the given PaymentMethod through Stripe
         $charge = [
             'amount' => $this->formatAmount($amount, ($this->currency ?? null)),
             'currency' => ($this->currency ?? null),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
+            'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
             'description' => $this->getChargeDescription($invoice_amounts),
             'confirm' => true,
             'off_session' => true
@@ -693,6 +700,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         if ($customer_present) {
             unset($charge['off_session']);
+        } else {
+            unset($charge['payment_method_options']);
         }
 
         $payment = $this->handleApiRequest(
@@ -730,12 +739,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $amount,
         array $invoice_amounts = null
     ) {
+        // Set 3DS authentication method
+        $this->meta['request_three_d_secure'] = $this->meta['request_three_d_secure'] ?? 'automatic';
+        if ($this->meta['request_three_d_secure'] == 'frictionless') {
+            $this->meta['request_three_d_secure'] = is_null($client_reference_id) ? 'challenge' : 'automatic';
+        }
+
         // Create a PaymentIntent through Stripe
         $payment = [
             'amount' => $this->formatAmount($amount, (isset($this->currency) ? $this->currency : null)),
             'currency' => (isset($this->currency) ? $this->currency : null),
             'description' => $this->getChargeDescription($invoice_amounts),
             'payment_method' => $account_reference_id,
+            'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
             'capture_method' => 'manual',
             'setup_future_usage' => 'off_session'
         ];
