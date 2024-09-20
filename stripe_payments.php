@@ -700,6 +700,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         if ($customer_present) {
             unset($charge['off_session']);
+        } else {
+            unset($charge['payment_method_options']);
         }
 
         $payment = $this->handleApiRequest(
