@@ -241,11 +241,21 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Load the helpers required for this view
         Loader::loadHelpers($this, ['Form', 'Html']);
 
+        // Set 3DS authentication method
+        $this->meta['request_three_d_secure'] = $this->meta['request_three_d_secure'] ?? 'automatic';
+        if ($this->meta['request_three_d_secure'] == 'frictionless') {
+            $this->meta['request_three_d_secure'] = 'any';
+        }
+
+        // Charge the given PaymentMethod through Stripe
+        $vars = [[
+            'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
+        ]];
         // Declare to Stripe the possibility of us creating a card PaymentMethod through this page
         // This is confirmed in the view using stripe.handleCardSetup
         $setup_intent = $this->handleApiRequest(
             ['Stripe\SetupIntent', 'create'],
-            [],
+            $vars,
             $this->base_url . 'setup_intents - create'
         );
 
@@ -702,6 +712,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             unset($charge['off_session']);
         } else {
             unset($charge['payment_method_options']);
+            $charge['automatic_payment_methods'] = ['enabled' => true, 'allow_redirects' => 'never'];
         }
 
         $payment = $this->handleApiRequest(
