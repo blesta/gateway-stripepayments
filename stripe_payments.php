@@ -243,8 +243,10 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Set 3DS authentication method
         $this->meta['request_three_d_secure'] = $this->meta['request_three_d_secure'] ?? 'automatic';
-        if ($this->meta['request_three_d_secure'] == 'frictionless') {
-            $this->meta['request_three_d_secure'] = 'any';
+        if (isset($this->staff_id)) {
+            $this->meta['request_three_d_secure'] = 'automatic';
+        } elseif ($this->meta['request_three_d_secure'] == 'frictionless') {
+            $this->meta['request_three_d_secure'] = 'challenge';
         }
 
         // Charge the given PaymentMethod through Stripe
@@ -695,6 +697,10 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         if ($this->meta['request_three_d_secure'] == 'frictionless') {
             $this->meta['request_three_d_secure'] = is_null($client_reference_id) ? 'challenge' : 'automatic';
         }
+        
+        if (isset($this->staff_id)) {
+            $this->meta['request_three_d_secure'] = 'automatic';
+        }
 
         // Charge the given PaymentMethod through Stripe
         $charge = [
@@ -754,6 +760,10 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->meta['request_three_d_secure'] = $this->meta['request_three_d_secure'] ?? 'automatic';
         if ($this->meta['request_three_d_secure'] == 'frictionless') {
             $this->meta['request_three_d_secure'] = is_null($client_reference_id) ? 'challenge' : 'automatic';
+        }
+        
+        if (isset($this->staff_id)) {
+            $this->meta['request_three_d_secure'] = 'automatic';
         }
 
         // Create a PaymentIntent through Stripe
