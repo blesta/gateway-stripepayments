@@ -891,7 +891,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         return [
             'status' => $status,
-            'reference_id' => ($captured_payment_intent->id ?? null),
+            'reference_id' => ($captured_payment_intent->error->payment_intent->id ?? $captured_payment_intent->id ?? null),
             'transaction_id' => ($captured_payment_intent->latest_charge ?? null),
             'message' => ($message ?? null)
         ];
