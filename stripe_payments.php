@@ -840,7 +840,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         );
 
         $latest_charge = $this->handleApiRequest(
-                ['Stripe\Charge', 'retrieve'],
             ['Stripe\Charge', 'retrieve'],
             [$payment_intent->latest_charge],
             $this->base_url . 'charge - retrieve'
