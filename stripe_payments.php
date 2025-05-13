@@ -831,7 +831,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $transaction_id,
         $amount,
         array $invoice_amounts = null
-    ) {
+    )
+    {
         $payment_intent = $this->handleApiRequest(
             ['Stripe\PaymentIntent', 'retrieve'],
             [$transaction_reference_id],
@@ -839,18 +840,15 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         );
 
         $latest_charge = $this->handleApiRequest(
-                ['Stripe\Charge', 'retrieve'],
-                [$payment_intent->latest_charge],
-                $this->base_url . 'charge - retrieve'
-            );
+            ['Stripe\Charge', 'retrieve'],
+            [$payment_intent->latest_charge],
+            $this->base_url . 'charge - retrieve'
+        );
         if (!empty($latest_charge->failure_code)) {
             return [
                 'status' => in_array(
-                    $latest_charge->failure_code,
-                    ['card_declined', 'bank_account_declined']
-                )
-                    ? 'declined'
-                    : 'error',
+                    $latest_charge->failure_code, ['card_declined', 'bank_account_declined']
+                ) ? 'declined' : 'error',
                 'reference_id' => ($payment_intent->id ?? null),
                 'transaction_id' => ($payment_intent->latest_charge ?? null),
                 'message' => $latest_charge->failure_message
@@ -883,10 +881,26 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     break;
                 case 'requires_source':
                 default:
-                    $message = isset($captured_payment_intent->error)
-                        ? ($captured_payment_intent->error->message ?? null)
-                        : '';
+                    $message =
+                        isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
+                            '';
             }
+        }
+
+        // Set capture account on current session
+        if ($status == 'approved') {
+            $charge = json_decode(json_encode($latest_charge), true);
+            $card = $charge['payment_method_details']['card'] ?? [];
+
+            $account = [
+                'last4' => ($card['last4'] ?? null),
+                'expiration' => ($card['exp_year'] ?? null)
+                    . str_pad(($card['exp_month'] ?? null), 2, 0, STR_PAD_LEFT),
+                'type' => $this->mapCardType(($card['brand'] ?? null))
+            ];
+
+            Loader::loadComponents($this, ['Session']);
+            $this->Session->write('capture_cc_account', $account);
         }
 
         return [
