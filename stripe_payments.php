@@ -1672,7 +1672,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Get event status
         $status = 'error';
         $stripe_status = $latest_charge->status ?? $payload->data->object->status ?? 'failed';
-        if (isset($stripe_status)) {
+
+        // Check if charge was refunded before mapping status
+        if ($latest_charge->refunded ?? $payload->data->object->refunded ?? false) {
+            $status = 'refunded';
+        } elseif (isset($stripe_status)) {
             switch ($stripe_status) {
                 case 'requires_capture':
                 case 'requires_confirmation':
