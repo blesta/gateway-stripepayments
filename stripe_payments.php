@@ -708,7 +708,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'currency' => ($this->currency ?? null),
             'customer' => $client_reference_id,
             'payment_method' => $account_reference_id,
+            'payment_method_types' => ['card'],
             'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
+            'automatic_payment_methods' => ['enabled' => true, 'allow_redirects' => 'never'],
             'description' => $this->getChargeDescription($invoice_amounts),
             'metadata' => ['invoices' => $this->serializeInvoices($invoice_amounts)],
             'confirm' => true,
@@ -719,7 +721,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             unset($charge['off_session']);
         } else {
             unset($charge['payment_method_options']);
-            $charge['automatic_payment_methods'] = ['enabled' => true, 'allow_redirects' => 'never'];
         }
 
         $payment = $this->handleApiRequest(
@@ -820,12 +821,14 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Create a PaymentIntent through Stripe
         $payment = [
-            'amount' => $this->formatAmount($amount, (isset($this->currency) ? $this->currency : null)),
-            'currency' => (isset($this->currency) ? $this->currency : null),
+            'amount' => $this->formatAmount($amount, ($this->currency ?? null)),
+            'currency' => ($this->currency ?? null),
             'description' => $this->getChargeDescription($invoice_amounts),
             'metadata' => ['invoices' => $this->serializeInvoices($invoice_amounts)],
             'payment_method' => $account_reference_id,
+            'payment_method_types' => ['card'],
             'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
+            'automatic_payment_methods' => ['enabled' => true, 'allow_redirects' => 'never'],
             'capture_method' => 'manual',
             'setup_future_usage' => 'off_session'
         ];
