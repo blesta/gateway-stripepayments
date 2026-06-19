@@ -1,21 +1,22 @@
 .StripeElement {
     box-sizing: border-box;
 
-    height: 20px;
+    height: 40px;
     width: 100%;
     max-width: 370px;
+    padding: 11px 12px;
 
-    border: 1px solid transparent;
+    border: 1px solid var(--border-color, #ced4da);
     border-radius: 4px;
-    background-color: white;
+    background-color: var(--bg-secondary, white);
 
-    box-shadow: 0 1px 3px 0 #d6dbe1;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     -webkit-transition: box-shadow 150ms ease;
     transition: box-shadow 150ms ease;
 }
 
 .StripeElement--focus {
-    box-shadow: 0 1px 3px 0 #cfd7df;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.15);
 }
 
 .StripeElement--invalid {
@@ -30,7 +31,7 @@
     clear: both;
     padding: 20px;
     border-radius: 5px;
-    background-color: #f4f4f4;
+    background-color: var(--bg-tertiary, #f4f4f4);
     width: 100%;
     max-width: 370px;
 }
@@ -49,7 +50,7 @@
     font-size: 14px;
     font-weight: 500;
     max-width: 100%;
-    color: #6b7c93;
+    color: var(--text-secondary, #6b7c93);
     padding: 0px;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -59,7 +60,7 @@
     margin-bottom: 8px;
     font-size: 12px;
     max-width: 100%;
-    color: #6b7c93;
+    color: var(--text-secondary, #6b7c93);
     padding: 0px;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -70,22 +71,22 @@
     box-sizing: border-box;
     height: 40px;
     width: 100%;
-    color: #32325d;
+    color: var(--text-primary, #32325d);
     font-family: "Helvetica Neue", Helvetica, sans-serif;
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
-    border: 1px solid transparent;
+    border: 1px solid var(--border-color, transparent);
     border-radius: 4px;
-    background-color: white;
+    background-color: var(--bg-secondary, white);
     outline: none;
-    box-shadow: 0 1px 3px 0 #d6dbe1;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     -webkit-transition: box-shadow 150ms ease;
     transition: box-shadow 150ms ease;
     padding: 10px 12px;
 }
 
 #stripe-ach-form input:disabled, #stripe-ach-form select:disabled {
-    color: #79808a;
+    color: var(--text-muted, #79808a);
 }
 
 #stripe-ach-form select {
@@ -96,7 +97,7 @@
 }
 
 #stripe-ach-form input:focus, #stripe-ach-form select:focus {
-    border-color: transparent;
+    border-color: var(--accent-color, transparent);
 }
 
 #stripe-ach-form #ach-errors {
