@@ -1,5 +1,5 @@
 {
-    "version": "2.0.0",
+    "version": "2.0.1",
     "name": "StripePayments.name",
     "description": "StripePayments.description",
     "authors": [
@@ -149,5 +149,9 @@
         "ZAR",
         "ZMW"
     ],
-    "signup_url": "https://dashboard.stripe.com/register"
+    "signup_url": "https://dashboard.stripe.com/register",
+    "logo": {
+        "light": "views/default/images/logo.svg",
+        "dark": "views/default/images/logo-dark.svg"
+    }
 }
