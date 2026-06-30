@@ -102,6 +102,19 @@
                     return el ? el.value : '';
                 }
 
+                function wrapperField(id) {
+                    var el = wrapper.querySelector('#' + id);
+
+                    return el ? el.value : '';
+                }
+
+                function setWrapperField(id, value) {
+                    var el = wrapper.querySelector('#' + id);
+                    if (el) {
+                        el.value = value;
+                    }
+                }
+
                 function isVisible(el) {
                     return !!(el && el.offsetParent !== null);
                 }
@@ -116,15 +129,15 @@
                 }
 
                 // If payment details changed setup a new bank account
-                var achElement = document.getElementById('ach-element');
+                var achElement = wrapper.querySelector('#ach-element');
                 if (achElement) {
                     achElement.addEventListener('change', function () {
-                        var errors = document.getElementById('ach-errors');
+                        var errors = wrapper.querySelector('#ach-errors');
                         if (errors) {
                             errors.textContent = '';
                         }
 
-                        var referenceId = document.getElementById('reference_id');
+                        var referenceId = wrapper.querySelector('#reference_id');
                         if (referenceId) {
                             referenceId.value = '';
                         }
@@ -180,14 +193,14 @@
                         stripe_ach.createToken('bank_account', {
                             country: 'US', // ACH is available only in the US
                             currency: 'usd', // ACH only supports USD
-                            routing_number: fieldValue('routing_number'),
-                            account_number: fieldValue('account_number'),
+                            routing_number: wrapperField('routing_number'),
+                            account_number: wrapperField('account_number'),
                             account_holder_name: fieldValue('first_name') + ' ' + fieldValue('last_name'),
-                            account_holder_type: fieldValue('holder_type')
+                            account_holder_type: wrapperField('holder_type')
                         })
                         .then(function (result) {
                             if (result.hasOwnProperty('error')) {
-                                var errors = document.getElementById('ach-errors');
+                                var errors = wrapper.querySelector('#ach-errors');
                                 if (errors) {
                                     errors.textContent = result.error.message;
                                 }
@@ -197,12 +210,12 @@
 
                             if (result.hasOwnProperty('token')) {
                                 // Set reference id
-                                setFieldValue('type', fieldValue('acc_type'));
-                                setFieldValue('reference_id', result.token.id);
+                                setWrapperField('type', wrapperField('acc_type'));
+                                setWrapperField('reference_id', result.token.id);
 
                                 // Remove secure data
                                 if (achElement) {
-                                    achElement.querySelectorAll('input, select').forEach(function (el) {
+                                    achElement.querySelectorAll('input, select, textarea, fieldset, button').forEach(function (el) {
                                         el.disabled = true;
                                     });
                                 }
@@ -213,13 +226,6 @@
                                 form.submit();
                             }
                         });
-                    }
-                }
-
-                function setFieldValue(id, value) {
-                    var el = document.getElementById(id);
-                    if (el) {
-                        el.value = value;
                     }
                 }
             }

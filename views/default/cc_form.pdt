@@ -98,7 +98,7 @@
                     enableFormSubmission();
 
                     // If payment details changed setup a new card
-                    var referenceId = document.getElementById('reference_id');
+                    var referenceId = wrapper.querySelector('#reference_id');
                     if (referenceId) {
                         referenceId.value = '';
                         // Reset submission events by triggering a payment detail change
@@ -213,7 +213,7 @@
                 }
 
                 function storeReferenceAndSubmit(reference_id) {
-                    var referenceId = document.getElementById('reference_id');
+                    var referenceId = wrapper.querySelector('#reference_id');
                     if (referenceId) {
                         referenceId.value = reference_id;
                     }
