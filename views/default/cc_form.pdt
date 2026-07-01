@@ -9,137 +9,226 @@
 
     <?php if ($load_stripe ?? false) { ?><script src="https://js.stripe.com/v3/"></script><?php } ?>
     <script>
-        $(document).ready(function() {
-            // Load CSS
-            $(this).blestaSetHeadTag("link", {media:"screen", type:"text/css", rel:"stylesheet", href: "<?php echo $this->Html->safe($this->view_dir . 'css/styles.css');?>"});
-
-            // Create a Stripe client
-            var stripe_cc = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
-
-            // Create an instance of Elements
-            var elements = stripe_cc.elements();
-
-            // Custom styling passed when creating the card Element
-            var style = {
-                base: {
-                    color: '#32325d',
-                    fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
-                    fontSmoothing: 'antialiased',
-                    fontSize: '16px',
-                    '::placeholder': {
-                        color: '#aab7c4'
-                    }
-                },
-                invalid: {
-                    color: '#fa755a',
-                    iconColor: '#fa755a'
-                }
-            };
-
-            // Create an instance of the card Element
-            var card = elements.create('card', {style: style});
-
-            // Add an instance of the card Element into the `card-element` <div>.
-            card.mount('#card-element');
-
-            // Handle real-time validation errors from the card Element.
-            card.on('change', function(event) {
-                var displayError = document.getElementById('card-errors');
-                if (event.error) {
-                    displayError.textContent = event.error.message;
-                } else {
-                    displayError.textContent = '';
-                }
-                $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
-
-                // If payment details changed setup a new card
-                $('#stripe-cc-form #reference_id').val('');
-                // Reset submission events by triggering a payment detail change
-                $('#stripe-cc-form #reference_id').change();
-            });
-
-            // Handle form submission.
-            $('#stripe-cc-form').closest('form').on('submit', submitCard);
-
-            // If payment details changed setup a new card
-            $('#payment_details, #account, #details').on('change', function() {
-                $('#stripe-cc-form').closest('form').off('submit', submitCard);
-                $('#stripe-cc-form').closest('form').on('submit', submitCard);
-            });
-
-            // Process submitted card
-            function submitCard(event) {
-                // Disable ACH form
-                if ($('select[name="payment_type"]').val() === 'cc') {
-                    $('input,select,textarea', '#payment_details_ach').attr('disabled', true);
+        // Vanilla JS so the form works in every theme (the Paradigm admin theme has no jQuery)
+        (function () {
+            function init() {
+                var wrapper = document.getElementById('stripe-cc-form');
+                if (!wrapper) {
+                    return;
                 }
 
-                // Paying with an existing payment account
-                let accountVisible = ($('#account:visible').length || ($('#pay_with_account').prop('checked') && $('select[name=payment_account]').length));
-                // Paying with a new payment account
-                let detailsVisible = ($('#details:visible').length || ($('#pay_with_details').prop('checked') && $('select[name=payment_type]').length));
-                let ccDetails = detailsVisible && ($('#details').val() === 'cc' || $('select[name=payment_type]').val() === 'cc');
-                // Add/update only the payment account (i.e. no payment)
-                let name = $('#first_name:visible').length;
+                var form = wrapper.closest('form');
+                if (!form) {
+                    return;
+                }
 
-                // Only process adding new payment accounts
-                if (ccDetails || (name && !accountVisible && !detailsVisible)) {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    var payment_method_data = {
-                        'billing_details': {
-                            'name': $('#first_name').val() + ' ' + $('#last_name').val(),
-                            'address': {
-                                'city': $('#city').val(),
-                                'country': $('#country').val(),
-                                'line1': $('#address1').val(),
-                                'line2': $('#address2').val(),
-                                'postal_code': $('#zip').val(),
-                                'state': $('#state').val()
-                            }
+                // Load the gateway stylesheet
+                if (!document.querySelector('link[data-stripe-payments]')) {
+                    var link = document.createElement('link');
+                    link.setAttribute('data-stripe-payments', '');
+                    link.rel = 'stylesheet';
+                    link.media = 'screen';
+                    link.type = 'text/css';
+                    link.href = '<?php echo $this->Html->safe($this->view_dir . 'css/styles.css');?>';
+                    document.head.appendChild(link);
+                }
+
+                // Create a Stripe client
+                var stripe_cc = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+
+                // Create an instance of Elements
+                var elements = stripe_cc.elements();
+
+                // Adapt the card Element text colors to the active (light/dark) theme
+                var theme = document.documentElement.getAttribute('data-theme')
+                    || document.documentElement.getAttribute('data-bs-theme');
+                var isDark = theme === 'dark';
+
+                // Custom styling passed when creating the card Element
+                var style = {
+                    base: {
+                        color: isDark ? '#e6e6e6' : '#32325d',
+                        fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+                        fontSmoothing: 'antialiased',
+                        fontSize: '16px',
+                        '::placeholder': {
+                            color: isDark ? '#8a8a8a' : '#aab7c4'
                         }
-                    };
+                    },
+                    invalid: {
+                        color: '#fa755a',
+                        iconColor: '#fa755a'
+                    }
+                };
 
-                    if ($('#payment_details_cc input[name="save_details"]').prop('checked') === false
-                        || $('#payment_details_cc input[name="save_details"]').not('#client_method input').not('#admin_clients_makepayment input').length > 0
-                    ) {
-                        // Create PaymentMethod that is not associated with a SetupIntent
-                        stripe_cc.createPaymentMethod('card', card, payment_method_data).then(function(result) {
-                            if (result.error) {
-                                var errorElement = document.getElementById('card-errors');
-                                errorElement.textContent = result.error.message;
-                                $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
-                            } else {
-                                // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
-                                storeReferenceAndSubmit(result.paymentMethod.id);
-                            }
-                        });
+                // Create an instance of the card Element
+                var card = elements.create('card', {style: style});
+
+                // Add an instance of the card Element into the `card-element` <div>
+                card.mount('#card-element');
+
+                function fieldValue(id) {
+                    var el = document.getElementById(id);
+
+                    return el ? el.value : '';
+                }
+
+                function isVisible(el) {
+                    return !!(el && el.offsetParent !== null);
+                }
+
+                function enableFormSubmission() {
+                    form.dataset.submitted = 'false';
+                    form.dataset.submitting = 'false';
+                    form.querySelectorAll('input[type="submit"], button[type="submit"]').forEach(function (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('disabled');
+                    });
+                }
+
+                // Handle real-time validation errors from the card Element
+                card.on('change', function (event) {
+                    var displayError = document.getElementById('card-errors');
+                    if (event.error) {
+                        displayError.textContent = event.error.message;
                     } else {
-                        var setup_secret = '<?php echo (isset($setup_intent->client_secret) ? $this->Html->safe($setup_intent->client_secret) : null);?>';
-                        var setup_data = {'payment_method_data': payment_method_data};
+                        displayError.textContent = '';
+                    }
 
-                        // Create a PaymentMethod that is associated with a SetupIntent
-                        stripe_cc.handleCardSetup(setup_secret, card, setup_data).then(function(result) {
-                            if (result.error) {
-                                var errorElement = document.getElementById('card-errors');
-                                errorElement.textContent = result.error.message;
-                                $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
-                            } else {
-                                // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
-                                storeReferenceAndSubmit(result.setupIntent.payment_method);
-                            }
+                    enableFormSubmission();
+
+                    // If payment details changed setup a new card
+                    var referenceId = wrapper.querySelector('#reference_id');
+                    if (referenceId) {
+                        referenceId.value = '';
+                        // Reset submission events by triggering a payment detail change
+                        referenceId.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                });
+
+                // Handle form submission
+                form.addEventListener('submit', submitCard);
+
+                // If payment details changed setup a new card (rebind the submit handler)
+                ['payment_details', 'account', 'details'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) {
+                        el.addEventListener('change', function () {
+                            form.removeEventListener('submit', submitCard);
+                            form.addEventListener('submit', submitCard);
                         });
                     }
+                });
+
+                // Determine whether to create a one-off PaymentMethod (not stored against the
+                // SetupIntent). Mirrors the original jQuery save_details checks.
+                function createOneOffMethod() {
+                    var saveDetails = document.querySelector('#payment_details_cc input[name="save_details"]');
+                    var isUnchecked = !!(saveDetails && saveDetails.checked === false);
+
+                    var outsideContexts = Array.prototype.slice.call(
+                        document.querySelectorAll('#payment_details_cc input[name="save_details"]')
+                    ).filter(function (el) {
+                        return !el.closest('#client_method') && !el.closest('#admin_clients_makepayment');
+                    }).length > 0;
+
+                    return isUnchecked || outsideContexts;
+                }
+
+                // Process submitted card
+                function submitCard(event) {
+                    var paymentType = form.querySelector('select[name="payment_type"]');
+
+                    // Disable the ACH form so its fields are not submitted
+                    if (paymentType && paymentType.value === 'cc') {
+                        var achDetails = document.getElementById('payment_details_ach');
+                        if (achDetails) {
+                            achDetails.querySelectorAll('input, select, textarea').forEach(function (el) {
+                                el.disabled = true;
+                            });
+                        }
+                    }
+
+                    // Paying with an existing payment account
+                    var payWithAccount = document.getElementById('pay_with_account');
+                    var accountVisible = isVisible(document.getElementById('account'))
+                        || (payWithAccount && payWithAccount.checked && document.querySelectorAll('select[name="payment_account"]').length);
+
+                    // Paying with a new payment account
+                    var payWithDetails = document.getElementById('pay_with_details');
+                    var detailsEl = document.getElementById('details');
+                    var detailsVisible = isVisible(detailsEl)
+                        || (payWithDetails && payWithDetails.checked && document.querySelectorAll('select[name="payment_type"]').length);
+                    var ccDetails = detailsVisible && ((detailsEl && detailsEl.value === 'cc') || (paymentType && paymentType.value === 'cc'));
+
+                    // Add/update only the payment account (i.e. no payment)
+                    var name = isVisible(document.getElementById('first_name'));
+
+                    // Only process adding new payment accounts
+                    if (ccDetails || (name && !accountVisible && !detailsVisible)) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+
+                        var payment_method_data = {
+                            'billing_details': {
+                                'name': fieldValue('first_name') + ' ' + fieldValue('last_name'),
+                                'address': {
+                                    'city': fieldValue('city'),
+                                    'country': fieldValue('country'),
+                                    'line1': fieldValue('address1'),
+                                    'line2': fieldValue('address2'),
+                                    'postal_code': fieldValue('zip'),
+                                    'state': fieldValue('state')
+                                }
+                            }
+                        };
+
+                        if (createOneOffMethod()) {
+                            // Create PaymentMethod that is not associated with a SetupIntent
+                            stripe_cc.createPaymentMethod('card', card, payment_method_data).then(function (result) {
+                                if (result.error) {
+                                    document.getElementById('card-errors').textContent = result.error.message;
+                                    enableFormSubmission();
+                                } else {
+                                    // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
+                                    storeReferenceAndSubmit(result.paymentMethod.id);
+                                }
+                            });
+                        } else {
+                            var setup_secret = '<?php echo (isset($setup_intent->client_secret) ? $this->Html->safe($setup_intent->client_secret) : null);?>';
+                            var setup_data = {'payment_method_data': payment_method_data};
+
+                            // Create a PaymentMethod that is associated with a SetupIntent
+                            stripe_cc.handleCardSetup(setup_secret, card, setup_data).then(function (result) {
+                                if (result.error) {
+                                    document.getElementById('card-errors').textContent = result.error.message;
+                                    enableFormSubmission();
+                                } else {
+                                    // Store the PaymentMethod ID as the reference_id and resubmit the form, bypassing this handler
+                                    storeReferenceAndSubmit(result.setupIntent.payment_method);
+                                }
+                            });
+                        }
+                    }
+                }
+
+                function storeReferenceAndSubmit(reference_id) {
+                    var referenceId = wrapper.querySelector('#reference_id');
+                    if (referenceId) {
+                        referenceId.value = reference_id;
+                    }
+
+                    form.removeEventListener('submit', submitCard);
+                    enableFormSubmission();
+                    form.submit();
                 }
             }
 
-            function storeReferenceAndSubmit(reference_id)
-            {
-                $('#stripe-cc-form #reference_id').val(reference_id);
-                $('#stripe-cc-form').closest('form').off('submit', submitCard);
-                $(this).blestaEnableFormSubmission($('#stripe-cc-form').closest('form'));
-                $('#stripe-cc-form').closest('form').submit();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
             }
-        });
+        })();
     </script>
 </div>
