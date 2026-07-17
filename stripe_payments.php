@@ -114,6 +114,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     'rule' => [[$this, 'validateConnection']],
                     'message' => Language::_('StripePayments.!error.secret_key.valid', true)
                 ]
+            ],
+            'india_mandate_max_amount' => [
+                'format' => [
+                    'if_set' => true,
+                    'rule' => ['matches', '/^\d+(\.\d{1,2})?$/'],
+                    'message' => Language::_('StripePayments.!error.india_mandate_max_amount.format', true)
+                ]
             ]
         ];
 
@@ -253,6 +260,25 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $vars = [[
             'payment_method_options' => ['card' => ['request_three_d_secure' => $this->meta['request_three_d_secure']]],
         ]];
+
+        // Attach the SetupIntent to a Stripe Customer so that the 3DS/OTP authentication the
+        // customer performs is credited to that Customer. Indian regulations forbid attaching a
+        // PaymentMethod to a Customer separately from an authenticated SetupIntent/PaymentIntent,
+        // so without this the PaymentMethod attach in storeCc() would be rejected for Indian cards
+        $customer_id = $this->getClientCustomerId();
+        if ($customer_id) {
+            $vars[0]['customer'] = $customer_id;
+            $vars[0]['usage'] = 'off_session';
+
+            // Register an eMandate for India-issued cards so future off-session charges do not
+            // require a fresh authentication each time. Only added once the merchant has configured
+            // a maximum per-charge amount; Stripe applies this only to cards that require it
+            $mandate_options = $this->getCardMandateOptions();
+            if ($mandate_options) {
+                $vars[0]['payment_method_options']['card']['mandate_options'] = $mandate_options;
+            }
+        }
+
         // Declare to Stripe the possibility of us creating a card PaymentMethod through this page
         // This is confirmed in the view using stripe.handleCardSetup
         $setup_intent = $this->handleApiRequest(
@@ -273,6 +299,114 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('meta', $this->meta);
 
         return $this->view->fetch();
+    }
+
+    /**
+     * Fetches the Stripe Customer ID for the current client, creating one from the client's
+     * primary contact if none exists yet. Used to tie SetupIntent authentication to a Customer,
+     * which Indian regulations require in order to save the resulting PaymentMethod
+     *
+     * @return string|null The Stripe Customer ID, or null if no client context is available
+     */
+    private function getClientCustomerId()
+    {
+        if (empty($this->client_id)) {
+            return null;
+        }
+
+        Loader::loadComponents($this, ['Record', 'Session']);
+
+        // Reuse the Customer already on file for this client and gateway, if any
+        $account = $this->Record->select(['accounts_cc.client_reference_id'])
+            ->from('accounts_cc')
+            ->innerJoin('contacts', 'contacts.id', '=', 'accounts_cc.contact_id', false)
+            ->where('contacts.client_id', '=', $this->client_id)
+            ->where('accounts_cc.gateway_id', '=', $this->gateway_id)
+            ->where('accounts_cc.client_reference_id', '!=', null)
+            ->where('accounts_cc.status', '=', 'active')
+            ->order(['accounts_cc.id' => 'desc'])
+            ->fetch();
+
+        if (!empty($account->client_reference_id)) {
+            return $account->client_reference_id;
+        }
+
+        // Reuse a Customer created earlier this session for this client, to avoid creating an
+        // orphan Stripe Customer on every form render before the first successful card save
+        $session_key = 'stripe_payments_customer_' . $this->gateway_id . '_' . $this->client_id;
+        $cached_customer_id = $this->Session->read($session_key);
+        if (!empty($cached_customer_id)) {
+            return $cached_customer_id;
+        }
+
+        // No Customer yet, create one from the client's primary contact
+        $contact = $this->Record->select()
+            ->from('contacts')
+            ->where('client_id', '=', $this->client_id)
+            ->where('contact_type', '=', 'primary')
+            ->fetch();
+
+        if (!$contact) {
+            return null;
+        }
+
+        $fields = [
+            'email' => $contact->email ?? null,
+            'name' => (!empty($contact->first_name) && !empty($contact->last_name))
+                ? $contact->first_name . ' ' . $contact->last_name
+                : ''
+        ];
+        if (!empty($contact->address1)) {
+            $fields['address'] = [
+                'line1' => $contact->address1,
+                'line2' => $contact->address2,
+                'city' => $contact->city,
+                'state' => $contact->state,
+                'country' => $contact->country,
+                'postal_code' => $contact->zip
+            ];
+        }
+
+        $customer = $this->handleApiRequest(
+            ['Stripe\Customer', 'create'],
+            [$fields],
+            $this->base_url . 'customers - create'
+        );
+
+        if (empty($customer->id)) {
+            return null;
+        }
+
+        $this->Session->write($session_key, $customer->id);
+
+        return $customer->id;
+    }
+
+    /**
+     * Builds the mandate_options for the SetupIntent's card, registering an eMandate for
+     * India-issued cards so subsequent off-session charges do not each require fresh
+     * authentication. Stripe applies this only to cards that require it, so it is safe to
+     * include regardless of the card's actual country of issuance
+     *
+     * @return array|null The mandate_options to attach to payment_method_options.card,
+     *  or null if the merchant has not configured a maximum charge amount
+     */
+    private function getCardMandateOptions()
+    {
+        $max_amount = $this->meta['india_mandate_max_amount'] ?? null;
+        if (!is_numeric($max_amount) || $max_amount <= 0) {
+            return null;
+        }
+
+        return [
+            'amount' => $this->formatAmount((float) $max_amount, ($this->currency ?? null)),
+            'amount_type' => 'maximum',
+            'currency' => strtolower($this->currency ?? ''),
+            'interval' => 'sporadic',
+            'reference' => substr('blesta-client-' . $this->client_id . '-' . time(), 0, 80),
+            'start_date' => time(),
+            'supported_types' => ['india']
+        ];
     }
 
     /**
@@ -477,56 +611,65 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             return false;
         }
 
-        // Attach the PaymentMethod to an existing Stripe customer if we have one on record
-        $attached = false;
-        if ($client_reference_id) {
-            // Get the Customer from Stripe
-            $customer = $this->handleApiRequest(
-                ['Stripe\Customer', 'retrieve'],
-                [$client_reference_id],
-                $this->base_url . 'customers - retrieve'
-            );
+        if (!empty($card->customer)) {
+            // Stripe already attached this PaymentMethod to a Customer itself, as part of a
+            // successful SetupIntent confirmation (see buildCcForm()/getClientCustomerId()).
+            // Attaching it again here would be the bare attach()/Customer::create() operation
+            // that Indian regulations forbid once 3DS has already happened without a Customer,
+            // so simply adopt the Customer Stripe already assigned
+            $customer = (object) ['id' => $card->customer];
+        } else {
+            // Attach the PaymentMethod to an existing Stripe customer if we have one on record
+            $attached = false;
+            if ($client_reference_id) {
+                // Get the Customer from Stripe
+                $customer = $this->handleApiRequest(
+                    ['Stripe\Customer', 'retrieve'],
+                    [$client_reference_id],
+                    $this->base_url . 'customers - retrieve'
+                );
 
-            if ($customer && (!isset($customer->deleted) || !$customer->deleted)) {
-                $attached = $this->handleApiRequest(
-                    function ($customer_id, $card) {
-                        return $card->attach(['customer' => $customer_id]);
-                    },
-                    [(isset($client_reference_id) ? $client_reference_id : null), $card],
-                    $this->base_url . 'payment_methods - attach'
+                if ($customer && (!isset($customer->deleted) || !$customer->deleted)) {
+                    $attached = $this->handleApiRequest(
+                        function ($customer_id, $card) {
+                            return $card->attach(['customer' => $customer_id]);
+                        },
+                        [(isset($client_reference_id) ? $client_reference_id : null), $card],
+                        $this->base_url . 'payment_methods - attach'
+                    );
+                }
+            }
+
+            // If we were not able to attach the PaymentMethod to an existing customer then create a new one
+            if (!$attached) {
+                // Reset errors so that if attaching failed we can still create a new customer and not show errors
+                $this->Input->setErrors([]);
+
+                // Set fields for the new customer profile
+                $fields = [
+                    'payment_method' => (isset($card_info['reference_id']) ? $card_info['reference_id'] : null),
+                    'email' => (isset($contact['email']) ? $contact['email'] : null),
+                    'name' => (!empty($contact['first_name']) && !empty($contact['last_name'])
+                        ? (isset($contact['first_name']) ? $contact['first_name'] : null) . ' ' . (isset($contact['last_name']) ? $contact['last_name'] : null)
+                        : '')
+                ];
+                if (!empty($contact['address1'])) {
+                    $fields['address'] = [
+                        'line1' => (isset($contact['address1']) ? $contact['address1'] : null),
+                        'line2' => (isset($contact['address2']) ? $contact['address2'] : null),
+                        'city' => (isset($contact['city']) ? $contact['city'] : null),
+                        'state' => (isset($contact['state']) ? $contact['state'] : null),
+                        'country' => (isset($contact['country']) ? $contact['country'] : null),
+                        'postal_code' => (isset($contact['zip']) ? $contact['zip'] : null)
+                    ];
+                }
+
+                $customer = $this->handleApiRequest(
+                    ['Stripe\Customer', 'create'],
+                    [$fields],
+                    $this->base_url . 'customers - create'
                 );
             }
-        }
-
-        // If we were not able to attach the PaymentMethod to an existing customer then create a new one
-        if (!$attached) {
-            // Reset errors so that if attaching failed we can still create a new customer and not show errors
-            $this->Input->setErrors([]);
-
-            // Set fields for the new customer profile
-            $fields = [
-                'payment_method' => (isset($card_info['reference_id']) ? $card_info['reference_id'] : null),
-                'email' => (isset($contact['email']) ? $contact['email'] : null),
-                'name' => (!empty($contact['first_name']) && !empty($contact['last_name'])
-                    ? (isset($contact['first_name']) ? $contact['first_name'] : null) . ' ' . (isset($contact['last_name']) ? $contact['last_name'] : null)
-                    : '')
-            ];
-            if (!empty($contact['address1'])) {
-                $fields['address'] = [
-                    'line1' => (isset($contact['address1']) ? $contact['address1'] : null),
-                    'line2' => (isset($contact['address2']) ? $contact['address2'] : null),
-                    'city' => (isset($contact['city']) ? $contact['city'] : null),
-                    'state' => (isset($contact['state']) ? $contact['state'] : null),
-                    'country' => (isset($contact['country']) ? $contact['country'] : null),
-                    'postal_code' => (isset($contact['zip']) ? $contact['zip'] : null)
-                ];
-            }
-
-            $customer = $this->handleApiRequest(
-                ['Stripe\Customer', 'create'],
-                [$fields],
-                $this->base_url . 'customers - create'
-            );
         }
 
         if ($this->Input->errors()) {
@@ -734,15 +877,30 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $payment = json_decode(json_encode($payment), true);
         if (isset($payment['error']) && (($payment['error']['code'] ?? null) === 'card_declined')) {
             $status = 'declined';
-        } elseif ((!isset($payment['error'])) && empty($errors) && ($payment['status'] ?? null) === 'succeeded') {
-            $status = 'approved';
+        } elseif (!isset($payment['error']) && empty($errors)) {
+            switch ($payment['status'] ?? null) {
+                case 'succeeded':
+                    $status = 'approved';
+                    break;
+                case 'requires_action':
+                case 'requires_confirmation':
+                case 'processing':
+                    // For India-issued cards with a registered eMandate, Stripe pauses here to send
+                    // the customer a pre-debit notification (required above the AFA-exempt threshold)
+                    // and waits for their approval. The webhook validate() handler reconciles the
+                    // final outcome once Stripe resolves it
+                    $status = 'pending';
+                    break;
+                default:
+                    $message = $payment['error']['message'] ?? null;
+            }
         } else {
             $message = $payment['error']['message'] ?? null;
         }
 
         return [
             'status' => $status,
-            'reference_id' => null,
+            'reference_id' => $payment['id'] ?? null,
             'transaction_id' => $payment['latest_charge'] ?? null,
             'message' => ($message ?? null)
         ];
@@ -1642,29 +1800,40 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Fetch client
         Loader::loadComponents($this, ['Record']);
 
-        // Extract the charge ID based on event type
+        // Extract identifiers to correlate this event with a locally stored transaction. For
+        // payment_intent events this is the resulting Charge ID (once one exists) and the
+        // PaymentIntent's own ID; the latter matches the reference_id stored for India eMandate
+        // charges still pending customer approval on the pre-debit notification, which have no
+        // Charge yet. For charge events this is the Charge's own ID and the PaymentIntent it belongs to
         if ($object_type === 'payment_intent') {
             $charge_id = $payload->data->object->latest_charge ?? null;
+            $payment_intent_id = $payload->data->object->id ?? null;
         } else {
             $charge_id = $payload->data->object->id ?? null;
+            $payment_intent_id = $payload->data->object->payment_intent ?? null;
         }
 
-        if (empty($charge_id)) {
+        $identifiers = array_filter([$charge_id, $payment_intent_id]);
+        if (empty($identifiers)) {
             return false;
         }
+
         $transaction = $this->Record->select()
             ->from('transactions')
                 ->open()
-                    ->where('transactions.transaction_id', '=', $charge_id)
-                    ->orWhere('transactions.reference_id', '=', $charge_id)
+                    ->where('transactions.transaction_id', 'in', $identifiers)
+                    ->orWhere('transactions.reference_id', 'in', $identifiers)
                 ->close()
             ->fetch();
 
-        $latest_charge = $this->handleApiRequest(
+        $latest_charge = null;
+        if (!empty($charge_id)) {
+            $latest_charge = $this->handleApiRequest(
                 ['Stripe\Charge', 'retrieve'],
                 [$charge_id],
                 $this->base_url . 'charge - retrieve'
             );
+        }
 
         if (empty($transaction->client_id)) {
             return false;
