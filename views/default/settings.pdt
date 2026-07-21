@@ -41,6 +41,17 @@
     </div>
     <div class="form-text"><?php $this->_('StripePayments.request_three_d_secure_note'); ?></div>
 </div>
+<div class="mb-3">
+    <label class="form-label">
+        <?php $this->_('StripePayments.india_mandate_max_amount'); ?>
+        <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="top"
+           title="<?php echo $this->Html->safe($this->_('StripePayments.tooltip_india_mandate_max_amount', true)); ?>"></i>
+    </label>
+    <?php
+    $this->Form->fieldText('india_mandate_max_amount', ($meta['india_mandate_max_amount'] ?? null), ['class' => 'form-control', 'id' => 'india_mandate_max_amount']);
+    ?>
+    <div class="form-text"><?php $this->_('StripePayments.india_mandate_max_amount_note'); ?></div>
+</div>
 
 <h6 class="form-section-header mt-4"><?php $this->_('StripePayments.webhook'); ?></h6>
 <p><?php $this->_('StripePayments.webhook_note'); ?></p>
