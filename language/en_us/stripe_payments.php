@@ -7,6 +7,7 @@ $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stri
 
 $lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify your bank account before you can use it to make a payment.';
 $lang['StripePayments.!error.invalid_request_error'] = 'The payment gateway returned an error when processing the request.';
+$lang['StripePayments.!error.india_mandate_max_amount.format'] = 'Please enter a valid amount for the maximum recurring charge.';
 
 $lang['StripePayments.name'] = 'Stripe Payments';
 $lang['StripePayments.description'] = 'Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe';
@@ -35,8 +36,12 @@ $lang['StripePayments.request_three_d_secure_frictionless'] = 'Present 3D Secure
 $lang['StripePayments.request_three_d_secure_challenge'] = 'Present 3D Secure challenge whenever a client saves a payment method or processes a payment method (stored or unstored)';
 $lang['StripePayments.request_three_d_secure_note'] = 'If you are a Stripe user based in India, before saving a new card with Stripe you must always perform 3D Secure (3DS) authentication.';
 
+$lang['StripePayments.india_mandate_max_amount'] = 'Maximum Recurring Charge Amount (India)';
+$lang['StripePayments.india_mandate_max_amount_note'] = 'Required to enable automatic recurring charges for cards issued in India. This is the maximum amount that may be charged to such a card in any single future off-session payment, in the currency being processed. Leave blank to allow Indian cards to be saved without registering for automatic recurring charges.';
+
 $lang['StripePayments.tooltip_publishable_key'] = 'Your API Publishable Key is specific to either live or test mode. Be sure you are using the correct key.';
 $lang['StripePayments.tooltip_secret_key'] = 'Your API Secret Key is specific to either live or test mode. Be sure you are using the correct key.';
+$lang['StripePayments.tooltip_india_mandate_max_amount'] = 'Per RBI regulations, recurring (off-session) charges to Indian cards above this amount will require the customer to separately authenticate the payment.';
 
 $lang['StripePayments.webhook'] = 'Stripe Webhook';
 $lang['StripePayments.webhook_note'] = 'It is recommended to configure the following url as a Webhook for "payment_intent" and "charge" events in your Stripe account.';
