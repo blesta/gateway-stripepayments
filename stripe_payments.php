@@ -1173,7 +1173,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     private function loadApi()
     {
-        Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
+        if (!class_exists('\Stripe\Stripe')) {
+            Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
+        }
         Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
 
         // Include identifying information about this being a gateway for Blesta
