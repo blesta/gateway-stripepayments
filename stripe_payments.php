@@ -297,6 +297,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
 
         return $this->view->fetch();
     }
@@ -432,6 +433,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         $this->view->set('payment_intent', $payment_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
 
         return $this->view->fetch();
     }
@@ -1169,6 +1171,21 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     }
 
     /**
+     * Retrieves identifying information about this gateway to register with Stripe
+     * on both server-side and client-side (Stripe.js) requests
+     *
+     * @return array An array containing the application name, version, and url
+     */
+    private function getAppInfo()
+    {
+        return [
+            'name' => 'Blesta ' . $this->getName(),
+            'version' => $this->getVersion(),
+            'url' => 'https://blesta.com'
+        ];
+    }
+
+    /**
      * Loads the API if not already loaded
      */
     private function loadApi()
@@ -1177,7 +1194,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
 
         // Include identifying information about this being a gateway for Blesta
-        Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
+        $app_info = $this->getAppInfo();
+        Stripe\Stripe::setAppInfo($app_info['name'], $app_info['version'], $app_info['url']);
 
         // Set API version
         Stripe\Stripe::setApiVersion('2023-10-16');
@@ -1398,6 +1416,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
         $this->view->set('types', $this->Accounts->getAchTypes());
         $this->view->set('status', $status);
         $this->view->set('holder_types', $holder_types);

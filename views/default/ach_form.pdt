@@ -96,6 +96,9 @@
                 // Create a Stripe client
                 var stripe_ach = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
+                // Identify this gateway to Stripe on client-side requests
+                stripe_ach.registerAppInfo(<?php echo json_encode($app_info ?? []);?>);
+
                 function fieldValue(id) {
                     var el = document.getElementById(id);
 
