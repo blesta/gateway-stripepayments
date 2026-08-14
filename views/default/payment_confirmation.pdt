@@ -18,7 +18,9 @@
                 var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
                 // Identify this gateway to Stripe on client-side requests
-                stripe.registerAppInfo(<?php echo json_encode($app_info ?? []);?>);
+                <?php if (!empty($app_info)) { ?>
+                stripe.registerAppInfo(<?php echo json_encode($app_info);?>);
+                <?php } ?>
 
                 function enableFormSubmission() {
                     form.dataset.submitted = 'false';
