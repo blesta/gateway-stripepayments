@@ -11,7 +11,7 @@
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
+class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchStatus, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
 {
     /**
      * @var array An array of meta data for this gateway
@@ -297,6 +297,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
 
         return $this->view->fetch();
     }
@@ -432,6 +433,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         $this->view->set('payment_intent', $payment_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
 
         return $this->view->fetch();
     }
@@ -1169,6 +1171,21 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     }
 
     /**
+     * Retrieves identifying information about this gateway to register with Stripe
+     * on both server-side and client-side (Stripe.js) requests
+     *
+     * @return array An array containing the application name, version, and url
+     */
+    private function getAppInfo()
+    {
+        return [
+            'name' => 'Blesta ' . $this->getName(),
+            'version' => $this->getVersion(),
+            'url' => 'https://blesta.com'
+        ];
+    }
+
+    /**
      * Loads the API if not already loaded
      */
     private function loadApi()
@@ -1177,7 +1194,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
 
         // Include identifying information about this being a gateway for Blesta
-        Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
+        $app_info = $this->getAppInfo();
+        Stripe\Stripe::setAppInfo($app_info['name'], $app_info['version'], $app_info['url']);
 
         // Set API version
         Stripe\Stripe::setApiVersion('2023-10-16');
@@ -1368,8 +1386,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'setup_intents - create'
         );
 
-        // Get bank account, if already exists
-        $status = 'new';
+        // Determine whether the stored bank account, if any, has been verified with Stripe
+        $verified = true;
         if (!empty($account_info['reference_id']) && !empty($account_info['client_reference_id'])) {
             $account = $this->handleApiRequest(
                 ['Stripe\Customer', 'retrieveSource'],
@@ -1377,9 +1395,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 $this->base_url . 'customers - retrieveSource'
             );
 
-            if ($account->status == 'new') {
-                $status = 'unverified';
+            // Being unable to fetch the account is not fatal here, this form only collects new bank
+            // account details, so discard the error and treat the account as unverified
+            if ($this->Input->errors()) {
+                $this->Input->setErrors([]);
             }
+
+            $verified = $this->achVerified($account);
         }
 
         // Check if Stripe.js is already loaded
@@ -1398,8 +1420,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('app_info', $this->getAppInfo());
         $this->view->set('types', $this->Accounts->getAchTypes());
-        $this->view->set('status', $status);
+        $this->view->set('verified', $verified);
         $this->view->set('holder_types', $holder_types);
         $this->view->set('account_info', $account_info);
         $this->view->set('company', $this->Companies->get(Configure::get('Blesta.company_id')));
@@ -1413,6 +1436,57 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     public function requiresAchStorage()
     {
         return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getAchAccountStatus($client_reference_id, $account_reference_id)
+    {
+        if (empty($client_reference_id) || empty($account_reference_id)) {
+            return null;
+        }
+
+        $account = $this->handleApiRequest(
+            ['Stripe\Customer', 'retrieveSource'],
+            [$client_reference_id, $account_reference_id],
+            $this->base_url . 'customers - retrieveSource'
+        );
+
+        // The status cannot be determined when the bank account could not be fetched. Discard the
+        // error so the caller keeps the status it already has rather than treating this as a failure
+        if ($this->Input->errors()) {
+            $this->Input->setErrors([]);
+
+            return null;
+        }
+
+        return $this->getAchStatus($account);
+    }
+
+    /**
+     * Determines whether the given Stripe bank account has completed micro-deposit verification.
+     * Stripe only considers a bank account usable for debits once its status is "verified", every
+     * other status ("new", "validated", "verification_failed", "errored") still requires verification
+     *
+     * @param mixed $account The Stripe bank account object, or the error response from a failed request
+     * @return bool True if the bank account has been verified with Stripe, false otherwise
+     */
+    private function achVerified($account)
+    {
+        return ($account->status ?? null) === Stripe\BankAccount::STATUS_VERIFIED;
+    }
+
+    /**
+     * Maps the verification status of the given Stripe bank account to the payment account status
+     * used by Blesta, so the locally stored status always mirrors Stripe
+     *
+     * @param mixed $account The Stripe bank account object, or the error response from a failed request
+     * @return string The payment account status, either "active" or "unverified"
+     */
+    private function getAchStatus($account)
+    {
+        return $this->achVerified($account) ? 'active' : 'unverified';
     }
 
     /**
@@ -1517,7 +1591,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         return [
             'client_reference_id' => ($customer->id ?? $client_reference_id),
             'reference_id' => ($account_info['reference_id'] ?? null),
-            'last4' => ($account->last4 ?? null)
+            'last4' => ($account->last4 ?? null),
+            'status' => $this->getAchStatus($account)
         ];
     }
 
@@ -1526,6 +1601,34 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function updateAch(array $account_info, array $contact, $client_reference_id, $account_reference_id)
     {
+        // The reference ID given must be a single-use token created for a new bank account. When it is
+        // missing, or is still the ID of the bank account already stored off site, there are no new bank
+        // details to store, so leave the existing bank account attached to the customer untouched
+        $reference_id = ($account_info['reference_id'] ?? null);
+        if (empty($reference_id) || $reference_id == $account_reference_id) {
+            $account = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieveSource'],
+                [$client_reference_id, $account_reference_id],
+                $this->base_url . 'customers - retrieveSource'
+            );
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+
+            $account_data = [
+                'client_reference_id' => $client_reference_id,
+                'reference_id' => $account_reference_id,
+                'status' => $this->getAchStatus($account)
+            ];
+
+            if (!empty($account->last4)) {
+                $account_data['last4'] = $account->last4;
+            }
+
+            return $account_data;
+        }
+
         // Add a new bank account to the same client
         $account_data = $this->storeAch($account_info, $contact, $client_reference_id);
 
@@ -1558,22 +1661,44 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             return false;
         }
 
-        // Verify bank account
-        if (isset($account->customer) && $account->customer == $client_reference_id) {
+        // The deposit amounts can only be submitted for a bank account belonging to this customer.
+        // Never report success without confirming the ownership of the account
+        if (($account->customer ?? null) != $client_reference_id) {
+            $this->Input->setErrors([
+                'verify' => ['invalid' => Language::_('StripePayments.!error.ach.invalid_account', true)]
+            ]);
+
+            return false;
+        }
+
+        // Verify bank account, an account already verified with Stripe requires no further action
+        if (!$this->achVerified($account)) {
             try {
-                $account->verify(['amounts' => [($vars['first_deposit'] ?? 0), ($vars['second_deposit'] ?? 0)]]);
+                // Stripe expects the deposit amounts in cents and refreshes the account in place
+                $account->verify(
+                    ['amounts' => [(int) ($vars['first_deposit'] ?? 0), (int) ($vars['second_deposit'] ?? 0)]]
+                );
             } catch (Throwable $e) {
                 $this->Input->setErrors(['verify' => ['error' => $e->getMessage()]]);
+
+                return false;
             }
         }
 
-        if ($this->Input->errors()) {
+        // Only report success when Stripe considers the bank account verified, otherwise the account
+        // would be marked active locally while it remains unusable for debits
+        if (!$this->achVerified($account)) {
+            $this->Input->setErrors([
+                'verify' => ['unverified' => Language::_('StripePayments.!error.ach.unverified', true)]
+            ]);
+
             return false;
         }
 
         return [
             'client_reference_id' => $client_reference_id,
-            'reference_id' => $account_reference_id
+            'reference_id' => $account_reference_id,
+            'status' => 'active'
         ];
     }
 

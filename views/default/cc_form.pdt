@@ -36,6 +36,11 @@
                 // Create a Stripe client
                 var stripe_cc = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
 
+                // Identify this gateway to Stripe on client-side requests
+                <?php if (!empty($app_info)) { ?>
+                stripe_cc.registerAppInfo(<?php echo json_encode($app_info);?>);
+                <?php } ?>
+
                 // Create an instance of Elements
                 var elements = stripe_cc.elements();
 

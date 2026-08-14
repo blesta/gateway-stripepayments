@@ -1,25 +1,11 @@
 <div id="stripe-ach-form">
     <div id="ach-element">
         <?php
-        if (($status ?? 'new') == 'unverified') {
+        if (!($verified ?? true)) {
         ?>
         <p><?php $this->_('StripePayments.ach_form.verification_notice'); ?></p>
-        <div class="form-group">
-            <?php
-            $this->Form->label($this->_('StripePayments.ach_form.field_first_deposit', true), 'first_deposit');
-            $this->Form->fieldText('first_deposit', null, ['id' => 'first_deposit', 'maxlength' => '2', 'placeholder' => '$0.']);
-            ?>
-        </div>
-        <div class="form-group">
-            <?php
-            $this->Form->label($this->_('StripePayments.ach_form.field_second_deposit', true), 'second_deposit');
-            $this->Form->fieldText('second_deposit', null, ['id' => 'second_deposit', 'maxlength' => '2', 'placeholder' => '$0.']);
-            ?>
-        </div>
         <?php
         }
-
-        if (($status ?? 'new') == 'new') {
         ?>
         <div class="form-group">
             <?php
@@ -45,9 +31,6 @@
             $this->Form->fieldText('routing_number', null, ['id' => 'routing_number', 'maxlength' => '9', 'placeholder' => $this->_('StripePayments.ach_form.field_routing', true)]);
             ?>
         </div>
-        <?php
-        }
-        ?>
 
         <p class="mb-0 mt-2"><small><?php $this->_('StripePayments.ach_form.mandate_authorization', false, ($company->name ?? ''));?></small></p>
         <p id="future_usage_mandate" class="mt-0 mt-2"><small><?php $this->_('StripePayments.ach_form.mandate_future_usage', false, ($company->name ?? ''));?></small></p>
@@ -56,16 +39,10 @@
     <!-- Used to display form errors. -->
     <div id="ach-errors" role="alert"></div>
     <?php
-    if (($status ?? 'new') == 'new') {
-        $this->Form->fieldHidden('type', '', ['id' => 'type']);
-        $this->Form->fieldHidden('reference_id', '', ['id' => 'reference_id']);
-    } elseif (($status ?? 'new') == 'unverified') {
-        $this->Form->fieldHidden('type', $account_info['type'] ?? null, ['id' => 'type']);
-        $this->Form->fieldHidden('reference_id', $account_info['reference_id'] ?? null, ['id' => 'reference_id']);
-        $this->Form->fieldHidden('client_reference_id', $account_info['client_reference_id'] ?? null, ['id' => 'client_reference_id']);
-    }
-
-    if (($status ?? 'new') == 'new') {
+    // The reference ID is always populated with a single-use token created from the fields above,
+    // it is never the ID of a bank account already stored off site
+    $this->Form->fieldHidden('type', '', ['id' => 'type']);
+    $this->Form->fieldHidden('reference_id', '', ['id' => 'reference_id']);
     ?>
     <?php if ($load_stripe ?? false) { ?><script src="https://js.stripe.com/v3/"></script><?php } ?>
     <script>
@@ -95,6 +72,11 @@
 
                 // Create a Stripe client
                 var stripe_ach = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+
+                // Identify this gateway to Stripe on client-side requests
+                <?php if (!empty($app_info)) { ?>
+                stripe_ach.registerAppInfo(<?php echo json_encode($app_info);?>);
+                <?php } ?>
 
                 function fieldValue(id) {
                     var el = document.getElementById(id);
@@ -237,7 +219,4 @@
             }
         })();
     </script>
-    <?php
-    }
-    ?>
 </div>
