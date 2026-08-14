@@ -11,7 +11,7 @@
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
+class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchStatus, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
 {
     /**
      * @var array An array of meta data for this gateway
@@ -1417,6 +1417,32 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     public function requiresAchStorage()
     {
         return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getAchAccountStatus($client_reference_id, $account_reference_id)
+    {
+        if (empty($client_reference_id) || empty($account_reference_id)) {
+            return null;
+        }
+
+        $account = $this->handleApiRequest(
+            ['Stripe\Customer', 'retrieveSource'],
+            [$client_reference_id, $account_reference_id],
+            $this->base_url . 'customers - retrieveSource'
+        );
+
+        // The status cannot be determined when the bank account could not be fetched. Discard the
+        // error so the caller keeps the status it already has rather than treating this as a failure
+        if ($this->Input->errors()) {
+            $this->Input->setErrors([]);
+
+            return null;
+        }
+
+        return $this->getAchStatus($account);
     }
 
     /**
