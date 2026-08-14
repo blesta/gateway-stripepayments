@@ -6,6 +6,8 @@ $lang['StripePayments.!error.secret_key.empty'] = 'Please enter a Secret Key.';
 $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stripe API using the given Secret Key.';
 
 $lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify your bank account before you can use it to make a payment.';
+$lang['StripePayments.!error.ach.invalid_account'] = 'The bank account could not be found for this customer.';
+$lang['StripePayments.!error.ach.unverified'] = 'The bank account could not be verified. Please confirm the deposit amounts and try again.';
 $lang['StripePayments.!error.invalid_request_error'] = 'The payment gateway returned an error when processing the request.';
 $lang['StripePayments.!error.india_mandate_max_amount.format'] = 'Please enter a valid amount for the maximum recurring charge.';
 
@@ -20,9 +22,7 @@ $lang['StripePayments.ach_form.field_holder_type_company'] = 'Company';
 $lang['StripePayments.ach_form.field_account_number'] = 'Account Number';
 $lang['StripePayments.ach_form.field_routing_number'] = 'Routing Number';
 
-$lang['StripePayments.ach_form.verification_notice'] = 'We sent two small deposits to this bank account. To verify this account, please confirm the amounts of these deposits.';
-$lang['StripePayments.ach_form.field_first_deposit'] = 'First Deposit';
-$lang['StripePayments.ach_form.field_second_deposit'] = 'Second Deposit';
+$lang['StripePayments.ach_form.verification_notice'] = 'The bank account currently on file has not been verified. Entering new bank account details below will replace it.';
 
 $lang['StripePayments.ach_form.mandate_authorization'] = 'By submitting this form, you authorize %1$s to debit the bank account specified above for any amount owed for charges arising from your use of %1$s services and/or purchase of products from %1$s, pursuant to %1$s website and terms, until this authorization is revoked. You may amend or cancel this authorization at any time by providing notice to %1$s with 30 (thirty) days notice.';
 $lang['StripePayments.ach_form.mandate_future_usage'] = 'If you use %1$s services or purchase additional products periodically pursuant to %1$s terms, you authorize %1$s to debit your bank account periodically. Payments that fall outside of the regular debits authorized above will only be debited after your authorization is obtained.';
