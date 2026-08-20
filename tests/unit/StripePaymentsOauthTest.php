@@ -225,7 +225,7 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertNotFalse($gateway->Input->errors());
     }
 
-    public function testHandleApiRequestLogsNoTokenMaterialOnAuthFailure()
+    public function testHandleApiRequestLeaksNoTokenMaterialOnAuthFailure()
     {
         $component = $this->extensionOauthSpy();
 
@@ -234,7 +234,7 @@ class StripePaymentsOauthTest extends TestCase
         $gateway->method('getExtensionOauth')->willReturn($component);
         $gateway->method('getGatewayId')->willReturn(1);
 
-        $this->invoke($gateway, 'handleApiRequest', [
+        $response = $this->invoke($gateway, 'handleApiRequest', [
             function () use ($component) {
                 throw \Stripe\Exception\AuthenticationException::factory(
                     'Invalid API Key provided: ' . $component->token
@@ -248,6 +248,10 @@ class StripePaymentsOauthTest extends TestCase
         foreach ($gateway->logs as $log) {
             $this->assertStringNotContainsString($component->token, (string) $log['data']);
         }
+
+        // The response object handed back to the caller is built from the same error
+        // array and must be just as clean as the logs
+        $this->assertStringNotContainsString($component->token, serialize((array) $response));
     }
 
     public function testHandleApiRequestPassesNonAuthExceptionsThroughUnclassified()

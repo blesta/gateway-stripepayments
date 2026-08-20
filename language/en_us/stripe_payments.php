@@ -68,6 +68,7 @@ $lang['StripePayments.oauth.connect_text'] = 'Connect your Stripe account to sta
 $lang['StripePayments.oauth.use_api_keys'] = 'Use API keys instead';
 $lang['StripePayments.oauth.convert'] = 'Switch to Stripe Connect';
 $lang['StripePayments.oauth.convert_text'] = 'This gateway is using API keys. Connect it to Stripe so credentials are managed automatically. Your Stripe account and your clients\' saved payment methods are kept.';
+$lang['StripePayments.oauth.convert_restricted'] = 'This gateway is using a restricted API key, which cannot be switched to Stripe Connect in place. It will continue to operate using the stored key.';
 $lang['StripePayments.oauth.recovery'] = 'Stripe is disconnected. Click Connect with Stripe to finish setup. Reconnecting to the same Stripe account will restore your clients\' saved payment methods.';
 $lang['StripePayments.oauth.disconnect'] = 'Disconnect';
 $lang['StripePayments.oauth.switch_to_live'] = 'Switch to Live';

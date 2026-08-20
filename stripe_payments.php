@@ -128,12 +128,18 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // revocation happened; reconnecting to the same account restores those references
         $has_stored_accounts = false;
         if ($state == 'unconfigured' && ($gateway_id = $this->getGatewayId())) {
-            $record = new Record;
-            $has_stored_accounts = $record->select()->
-                from('accounts_cc')->
-                where('gateway_id', '=', $gateway_id)->
-                where('status', '=', 'active')->
-                numResults() > 0;
+            foreach (['accounts_cc', 'accounts_ach'] as $table) {
+                $record = new Record;
+                $has_stored_accounts = $record->select()->
+                    from($table)->
+                    where('gateway_id', '=', $gateway_id)->
+                    where('status', '=', 'active')->
+                    numResults() > 0;
+
+                if ($has_stored_accounts) {
+                    break;
+                }
+            }
         }
 
         $this->view->set('state', $state);
@@ -380,6 +386,23 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         if (!$this->GatewayManager->errors()) {
             $this->meta = $meta;
+        } else {
+            // The keys surviving next to an active grant is the liability described above,
+            // so the failure must at least be visible in the gateway log. It must not turn
+            // the already-persisted connect into an error, so logging failures are swallowed
+            try {
+                $this->log(
+                    'internal - oauth connect',
+                    serialize([
+                        'error' => 'Failed to clear the stored API keys after connecting through OAuth',
+                        'details' => $this->GatewayManager->errors()
+                    ]),
+                    'output',
+                    false
+                );
+            } catch (Throwable $e) {
+                // Nothing left to do; the grant itself is intact
+            }
         }
     }
 
@@ -1014,9 +1037,14 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $loggable_response = $response->jsonSerialize();
         } catch (OauthTokenRejectedException $exception) {
             // By this point core has already retried once with a refreshed token and, if
-            // the refresh was terminal, cleared the grant. Log no token material
+            // the refresh was terminal, cleared the grant. Stripe embeds the presented key
+            // in its auth error message, and this array is also returned to the caller as
+            // the response object, so it must carry no token material
             $loggable_response = [
-                'error' => ['type' => 'authentication_error', 'message' => $exception->getMessage()]
+                'error' => [
+                    'type' => 'authentication_error',
+                    'message' => $this->maskTokenStrings($exception->getMessage())
+                ]
             ];
             $errors = [
                 'authentication_error' => [
