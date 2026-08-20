@@ -94,7 +94,7 @@
                 }
 
                 // Create a Stripe client
-                var stripe_ach = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+                var stripe_ach = Stripe('<?php echo (isset($publishable_key) ? $this->Html->safe($publishable_key) : null);?>');
 
                 function fieldValue(id) {
                     var el = document.getElementById(id);

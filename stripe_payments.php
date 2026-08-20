@@ -1,4 +1,8 @@
 <?php
+
+use Blesta\Core\Util\Oauth\CentralizedOauthExtension;
+use Blesta\Core\Util\Oauth\OauthTokenRejectedException;
+
 /**
  * Stripe Credit Card processing gateway. Supports offsite payment
  * processing for Credit Cards using the latest secure methods from Stripe.
@@ -11,7 +15,7 @@
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm
+class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm, CentralizedOauthExtension
 {
     /**
      * @var array An array of meta data for this gateway
@@ -22,6 +26,16 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      * @var string The base URL of API requests
      */
     private $base_url = 'https://api.stripe.com/v1/';
+
+    /**
+     * @var array|null The memoized OAuth enrollment status for this gateway
+     */
+    private $oauth_enrollment;
+
+    /**
+     * @var int|null The memoized gateway ID resolved from this company's installed gateways
+     */
+    private $resolved_gateway_id;
 
     /**
      * Construct a new merchant gateway
@@ -87,6 +101,51 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('legacy_stripe_installed', $legacy_stripe_installed);
         $this->view->set('meta', $meta);
 
+        // Determine the connection state; the grant in core's oauth_authorizations table is
+        // authoritative, stored API keys only matter when no grant exists
+        $this->setMeta($meta);
+        $enrollment = $this->getEnrollment();
+        if (!empty($enrollment['connected'])) {
+            $state = 'connected';
+        } elseif (!empty($meta['secret_key'])) {
+            $state = 'api_keys';
+        } else {
+            $state = 'unconfigured';
+        }
+
+        // The convert flow can only promise an in-place switch for standard secret keys,
+        // whose prefix also tells us which mode to request
+        $convert_mode = null;
+        if ($state == 'api_keys') {
+            if (str_starts_with($meta['secret_key'], 'sk_live_')) {
+                $convert_mode = 'live';
+            } elseif (str_starts_with($meta['secret_key'], 'sk_test_')) {
+                $convert_mode = 'test';
+            }
+        }
+
+        // Arriving unconfigured while stored payment accounts exist means a disconnect or
+        // revocation happened; reconnecting to the same account restores those references
+        $has_stored_accounts = false;
+        if ($state == 'unconfigured' && ($gateway_id = $this->getGatewayId())) {
+            $record = new Record;
+            $has_stored_accounts = $record->select()->
+                from('accounts_cc')->
+                where('gateway_id', '=', $gateway_id)->
+                where('status', '=', 'active')->
+                numResults() > 0;
+        }
+
+        $this->view->set('state', $state);
+        $this->view->set('enrollment', $enrollment);
+        $this->view->set('convert_mode', $convert_mode);
+        $this->view->set('has_stored_accounts', $has_stored_accounts);
+        $this->view->set('gateway_id', $this->getGatewayId());
+        $this->view->set(
+            'oauth_action_url',
+            WEBDIR . Configure::get('Route.admin') . '/settings/company/gateways/oauth/'
+        );
+
         return $this->view->fetch();
     }
 
@@ -97,14 +156,26 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     {
         // Validate the given meta data to ensure it meets the requirements
         $rules = [
-            'publishable_key' => [
+            'india_mandate_max_amount' => [
+                'format' => [
+                    'if_set' => true,
+                    'rule' => ['matches', '/^\d+(\.\d{1,2})?$/'],
+                    'message' => Language::_('StripePayments.!error.india_mandate_max_amount.format', true)
+                ]
+            ]
+        ];
+
+        // API keys are only required while the gateway runs on them; when connected through
+        // OAuth the grant is the credential and the key fields are not even rendered
+        if (!$this->isOauthConnected()) {
+            $rules['publishable_key'] = [
                 'empty' => [
                     'rule' => 'isEmpty',
                     'negate' => true,
                     'message' => Language::_('StripePayments.!error.publishable_key.empty', true)
                 ]
-            ],
-            'secret_key' => [
+            ];
+            $rules['secret_key'] = [
                 'empty' => [
                     'rule' => 'isEmpty',
                     'negate' => true,
@@ -114,15 +185,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     'rule' => [[$this, 'validateConnection']],
                     'message' => Language::_('StripePayments.!error.secret_key.valid', true)
                 ]
-            ],
-            'india_mandate_max_amount' => [
-                'format' => [
-                    'if_set' => true,
-                    'rule' => ['matches', '/^\d+(\.\d{1,2})?$/'],
-                    'message' => Language::_('StripePayments.!error.india_mandate_max_amount.format', true)
-                ]
-            ]
-        ];
+            ];
+        }
 
         $this->Input->setRules($rules);
 
@@ -236,6 +300,201 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     /**
      * {@inheritdoc}
      */
+    public function getOauthProvider(): string
+    {
+        return 'stripe';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function validateOauthGrant(array $grant): bool
+    {
+        // The broker normalizes these upstream, so this is belt-and-braces
+        if (empty($grant['access_token']) || empty($grant['account_id']) || empty($grant['publishable_key'])) {
+            return false;
+        }
+
+        // Only a convert carries extra acceptance requirements; a fresh connect has no
+        // stored account to compare against
+        if (($grant['extras']['intent'] ?? null) !== 'convert') {
+            return true;
+        }
+
+        $secret_key = ($this->meta['secret_key'] ?? '');
+        if ($secret_key === '') {
+            return false;
+        }
+
+        // The grant must be for the same mode the stored key operates in
+        if (str_starts_with($secret_key, 'sk_live_')) {
+            $expected_mode = 'live';
+        } elseif (str_starts_with($secret_key, 'sk_test_')) {
+            $expected_mode = 'test';
+        } else {
+            return false;
+        }
+
+        if (($grant['mode'] ?? null) !== $expected_mode) {
+            return false;
+        }
+
+        // The grant must land on the account the stored key already points at, or every
+        // stored customer/card reference would silently stop resolving
+        $account_id = $this->getStripeAccountId($secret_key);
+
+        return $account_id !== null && $account_id === $grant['account_id'];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function onOauthGrantChanged(?array $grant): void
+    {
+        // Connection state is derived from the grant, so a cleared grant needs no
+        // extension-side bookkeeping; keys were already cleared when the grant was made
+        if ($grant === null) {
+            return;
+        }
+
+        // A connected gateway must not keep its legacy keys: a later disconnect has to land
+        // in the unconfigured state rather than silently reverting to possibly-dead keys,
+        // and a live secret key at rest with no consumer is pure liability
+        $meta = ($this->meta ?? []);
+        if (($meta['secret_key'] ?? '') === '' && ($meta['publishable_key'] ?? '') === '') {
+            return;
+        }
+
+        $meta['secret_key'] = '';
+        $meta['publishable_key'] = '';
+
+        if (!($gateway_id = $this->getGatewayId())) {
+            return;
+        }
+
+        // The grant is already persisted, so the re-entrant editSettings() call sees the
+        // connected state and does not demand the keys being blanked
+        $this->oauth_enrollment = null;
+        Loader::loadModels($this, ['GatewayManager']);
+        $this->GatewayManager->edit($gateway_id, ['meta' => $meta]);
+
+        if (!$this->GatewayManager->errors()) {
+            $this->meta = $meta;
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getOauthSettingsUrl(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Fetches the ID of the Stripe account a secret key belongs to
+     *
+     * @param string $secret_key The secret key to identify
+     * @return string|null The account ID, null if the account could not be fetched; a
+     *  convert check that errored must refuse rather than accept
+     */
+    protected function getStripeAccountId($secret_key)
+    {
+        try {
+            $this->loadApiLibrary();
+            $account = Stripe\Account::retrieve(null, ['api_key' => $secret_key]);
+
+            return (isset($account->id) ? (string) $account->id : null);
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns whether this gateway is connected through a centrally-brokered OAuth grant
+     *
+     * @return bool True if an OAuth grant is the gateway's credential
+     */
+    protected function isOauthConnected()
+    {
+        $enrollment = $this->getEnrollment();
+
+        return !empty($enrollment['connected']);
+    }
+
+    /**
+     * Returns the OAuth enrollment status for this gateway, memoized per instance
+     *
+     * @return array The enrollment status
+     */
+    protected function getEnrollment()
+    {
+        if ($this->oauth_enrollment === null) {
+            $this->oauth_enrollment = ['connected' => false, 'pending' => false];
+
+            if (($gateway_id = $this->getGatewayId())) {
+                $this->oauth_enrollment = $this->getExtensionOauth()
+                    ->getEnrollmentStatus('gateway', $gateway_id, $this->getOauthProvider());
+            }
+        }
+
+        return $this->oauth_enrollment;
+    }
+
+    /**
+     * Returns the publishable key for Stripe.js to use
+     *
+     * @return string|null The grant's publishable key when connected, otherwise the stored
+     *  meta key
+     */
+    protected function getPublishableKey()
+    {
+        if ($this->isOauthConnected()) {
+            return ($this->getEnrollment()['publishable_key'] ?? null);
+        }
+
+        return ($this->meta['publishable_key'] ?? null);
+    }
+
+    /**
+     * Returns the ID of this gateway's row for the current company, resolving it when the
+     * caller did not provide one. getSettings() and editSettings() run on instances that
+     * never had setGatewayId() called
+     *
+     * @return int|null The gateway ID, null when the gateway is not installed
+     */
+    protected function getGatewayId()
+    {
+        if (!empty($this->gateway_id)) {
+            return (int) $this->gateway_id;
+        }
+
+        if ($this->resolved_gateway_id === null) {
+            Loader::loadModels($this, ['GatewayManager']);
+            $gateways = $this->GatewayManager->getByClass('stripe_payments', Configure::get('Blesta.company_id'));
+            $this->resolved_gateway_id = (!empty($gateways) ? (int) $gateways[0]->id : 0);
+        }
+
+        return ($this->resolved_gateway_id ?: null);
+    }
+
+    /**
+     * Returns the ExtensionOauth component, loading it on first use
+     *
+     * @return ExtensionOauth The component owning the OAuth grant lifecycle
+     */
+    protected function getExtensionOauth()
+    {
+        if (!isset($this->ExtensionOauth)) {
+            Loader::loadComponents($this, ['ExtensionOauth']);
+        }
+
+        return $this->ExtensionOauth;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function buildCcForm()
     {
         // Load the view into this object, so helpers can be automatically added to the view
@@ -297,6 +556,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('publishable_key', $this->getPublishableKey());
 
         return $this->view->fetch();
     }
@@ -432,6 +692,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         $this->view->set('payment_intent', $payment_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('publishable_key', $this->getPublishableKey());
 
         return $this->view->fetch();
     }
@@ -724,10 +985,44 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $errors = [];
         $loggable_response = [];
         try {
-            $response = call_user_func_array($api_method, $params);
+            if ($this->isOauthConnected()) {
+                // Consume the grant's access token through core, which owns the retry
+                // discipline: on a rejected token it refreshes once and re-invokes with the
+                // new token, and clears the grant when the refresh is terminal. Non-auth
+                // exceptions propagate through untouched to the catch blocks below
+                $response = $this->getExtensionOauth()->withAccessToken(
+                    'gateway',
+                    $this->getGatewayId(),
+                    $this->getOauthProvider(),
+                    function ($token) use ($api_method, $params) {
+                        Stripe\Stripe::setApiKey($token);
+
+                        try {
+                            return call_user_func_array($api_method, $params);
+                        } catch (\Stripe\Exception\AuthenticationException $e) {
+                            // Classification is this gateway's only job; only it can
+                            // recognize Stripe's authentication error
+                            throw new OauthTokenRejectedException($e->getMessage(), 0, $e);
+                        }
+                    }
+                );
+            } else {
+                $response = call_user_func_array($api_method, $params);
+            }
 
             // Convert the response to a loggable array
             $loggable_response = $response->jsonSerialize();
+        } catch (OauthTokenRejectedException $exception) {
+            // By this point core has already retried once with a refreshed token and, if
+            // the refresh was terminal, cleared the grant. Log no token material
+            $loggable_response = [
+                'error' => ['type' => 'authentication_error', 'message' => $exception->getMessage()]
+            ];
+            $errors = [
+                'authentication_error' => [
+                    'auth_error' => Language::_('StripePayments.!error.auth', true)
+                ]
+            ];
         } catch (\Stripe\Exception\InvalidRequestException $exception) {
             if (!empty($exception->getJsonBody())) {
                 $loggable_response = $exception->getJsonBody();
@@ -1169,12 +1464,26 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     }
 
     /**
-     * Loads the API if not already loaded
+     * Loads the API if not already loaded. When connected through OAuth the key is set
+     * per-request from the grant's access token instead (see handleApiRequest())
      */
     private function loadApi()
     {
+        $this->loadApiLibrary();
+
+        if (!$this->isOauthConnected()) {
+            Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
+        }
+    }
+
+    /**
+     * Loads the Stripe SDK and pins its identification and API version, without setting
+     * any key. OAuth-issued access tokens are ordinary secret keys, so the pinned API
+     * version applies to both credential paths identically
+     */
+    private function loadApiLibrary()
+    {
         Loader::load(dirname(__FILE__) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php');
-        Stripe\Stripe::setApiKey((isset($this->meta['secret_key']) ? $this->meta['secret_key'] : null));
 
         // Include identifying information about this being a gateway for Blesta
         Stripe\Stripe::setAppInfo('Blesta ' . $this->getName(), $this->getVersion(), 'https://blesta.com');
@@ -1209,13 +1518,40 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Log data sent to the gateway
         $this->log(
             $url,
-            serialize($params),
+            serialize($this->maskTokenStrings($params)),
             'input',
             (isset($params['error']) ? false : true)
         );
 
         // Log response from the gateway
-        $this->log($url, serialize($this->maskDataRecursive($response, $mask_fields)), 'output', $success);
+        $this->log(
+            $url,
+            serialize($this->maskTokenStrings($this->maskDataRecursive($response, $mask_fields))),
+            'output',
+            $success
+        );
+    }
+
+    /**
+     * Masks any secret-key-shaped substring wherever it appears in the data. Field-name
+     * masking cannot catch these: Stripe's authentication error bodies embed the presented
+     * key in the error message itself, and when connected through OAuth that key is the
+     * grant's access token
+     *
+     * @param mixed $data The data to mask
+     * @return mixed The data with any sk_/rk_-shaped substrings masked
+     */
+    private function maskTokenStrings($data)
+    {
+        if (is_array($data)) {
+            return array_map([$this, __FUNCTION__], $data);
+        }
+
+        if (is_string($data)) {
+            return preg_replace('/\b(sk|rk)_[A-Za-z0-9_]+/', '**masked**', $data);
+        }
+
+        return $data;
     }
 
     /**
@@ -1398,6 +1734,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
+        $this->view->set('publishable_key', $this->getPublishableKey());
         $this->view->set('types', $this->Accounts->getAchTypes());
         $this->view->set('status', $status);
         $this->view->set('holder_types', $holder_types);

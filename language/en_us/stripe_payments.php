@@ -56,3 +56,26 @@ $lang['StripePayments.migrate_accounts'] = 'Migrate Accounts';
 // Charge description
 $lang['StripePayments.charge_description_default'] = 'Charge for specified amount';
 $lang['StripePayments.charge_description'] = 'Charge for %1$s'; // Where %1$s is a comma seperated list of invoice ID display codes
+
+// Stripe Connect (OAuth)
+$lang['StripePayments.oauth.pending'] = 'A Stripe authorization is in progress. If you did not complete it, you can safely start over by clicking Connect again.';
+$lang['StripePayments.oauth.connected'] = 'Connected to Stripe account %1$s'; // Where %1$s is the Stripe account ID
+$lang['StripePayments.oauth.badge_live'] = 'Live';
+$lang['StripePayments.oauth.badge_test'] = 'Test';
+$lang['StripePayments.oauth.connect'] = 'Connect with Stripe';
+$lang['StripePayments.oauth.connect_test'] = 'Set up in sandbox/test mode instead';
+$lang['StripePayments.oauth.connect_text'] = 'Connect your Stripe account to start accepting payments. Your credentials are managed automatically, so there are no API keys to copy or rotate.';
+$lang['StripePayments.oauth.use_api_keys'] = 'Use API keys instead';
+$lang['StripePayments.oauth.convert'] = 'Switch to Stripe Connect';
+$lang['StripePayments.oauth.convert_text'] = 'This gateway is using API keys. Connect it to Stripe so credentials are managed automatically. Your Stripe account and your clients\' saved payment methods are kept.';
+$lang['StripePayments.oauth.recovery'] = 'Stripe is disconnected. Click Connect with Stripe to finish setup. Reconnecting to the same Stripe account will restore your clients\' saved payment methods.';
+$lang['StripePayments.oauth.disconnect'] = 'Disconnect';
+$lang['StripePayments.oauth.switch_to_live'] = 'Switch to Live';
+
+$lang['StripePayments.oauth.modal_cancel'] = 'Cancel';
+$lang['StripePayments.oauth.modal_switch_title'] = 'Switch to Live Mode';
+$lang['StripePayments.oauth.modal_switch_text'] = 'This disconnects the current test-mode connection and sends you to Stripe to authorize in live mode. The test connection cannot be restored, and any payment methods saved under the test account will no longer resolve. If you leave before completing the live authorization, this gateway will remain disconnected until you connect again.';
+$lang['StripePayments.oauth.modal_disconnect_title'] = 'Disconnect from Stripe';
+$lang['StripePayments.oauth.modal_disconnect_text'] = 'This revokes Blesta\'s access to your Stripe account and leaves the gateway unconfigured, so no further payments can be processed until it is set up again. Your clients\' saved payment methods remain in your Stripe account and will work again if you reconnect to the same account.';
+$lang['StripePayments.oauth.modal_convert_test_title'] = 'Convert in Test Mode';
+$lang['StripePayments.oauth.modal_convert_test_text'] = 'The stored secret key is a test-mode key, so this gateway will connect to Stripe in TEST mode. Payments will not be processed for real. Proceed?';

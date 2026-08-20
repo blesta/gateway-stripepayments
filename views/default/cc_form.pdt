@@ -34,7 +34,7 @@
                 }
 
                 // Create a Stripe client
-                var stripe_cc = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+                var stripe_cc = Stripe('<?php echo (isset($publishable_key) ? $this->Html->safe($publishable_key) : null);?>');
 
                 // Create an instance of Elements
                 var elements = stripe_cc.elements();

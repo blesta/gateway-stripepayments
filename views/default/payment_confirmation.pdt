@@ -15,7 +15,7 @@
                 }
 
                 // Create a Stripe client
-                var stripe = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+                var stripe = Stripe('<?php echo (isset($publishable_key) ? $this->Html->safe($publishable_key) : null);?>');
 
                 function enableFormSubmission() {
                     form.dataset.submitted = 'false';
