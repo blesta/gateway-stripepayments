@@ -22,6 +22,8 @@
                 stripe.registerAppInfo(<?php echo json_encode($app_info);?>);
                 <?php } ?>
 
+                var confirmed = false;
+
                 function enableFormSubmission() {
                     form.dataset.submitted = 'false';
                     form.dataset.submitting = 'false';
@@ -29,12 +31,39 @@
                         btn.disabled = false;
                         btn.classList.remove('disabled');
                     });
+
+                    // The theme's double submit guard tracks state in jQuery's data store,
+                    // which the dataset attributes above do not reach
+                    if (window.jQuery) {
+                        window.jQuery(form).data('submitted', false);
+                    }
+                }
+
+                // Bind natively for themes without jQuery, and through jQuery for callers that submit
+                // with jQuery's trigger, which calls form.submit() and so dispatches no submit event
+                function bindSubmit() {
+                    form.addEventListener('submit', submitPayment);
+                    if (window.jQuery) {
+                        window.jQuery(form).on('submit', submitPayment);
+                    }
+                }
+
+                function unbindSubmit() {
+                    form.removeEventListener('submit', submitPayment);
+                    if (window.jQuery) {
+                        window.jQuery(form).off('submit', submitPayment);
+                    }
                 }
 
                 // Handle form submission (only once)
-                form.addEventListener('submit', submitPayment, {once: true});
+                bindSubmit();
 
                 function submitPayment(event) {
+                    // A real submit reaches both the native and the jQuery handler, only confirm once
+                    if (confirmed) {
+                        return;
+                    }
+
                     // Skip attempting a payment if the submission is to edit in Blesta, not submit the payment
                     var submitBtn = document.activeElement;
 
@@ -46,6 +75,7 @@
                         return;
                     }
 
+                    confirmed = true;
                     event.preventDefault();
                     // Confirm the PaymentIntent, the card will not actually be charged until we capture server side
                     stripe.handleCardPayment(
@@ -53,6 +83,7 @@
                         {payment_method: '<?php echo (isset($payment_intent->payment_method) ? $this->Html->safe($payment_intent->payment_method) : null);?>'}
                     ).then(function (result) {
                         // Resubmit the form, bypassing this handler
+                        unbindSubmit();
                         enableFormSubmission();
                         form.submit();
                     });
