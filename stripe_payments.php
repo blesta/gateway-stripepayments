@@ -1971,6 +1971,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // Check if charge was refunded before mapping status
         if ($latest_charge->refunded ?? $payload->data->object->refunded ?? false) {
             $status = 'refunded';
+        } elseif (($latest_charge->captured ?? $payload->data->object->captured ?? true) === false) {
+            // A Charge reports 'succeeded' as soon as it is authorized, but with a manual
+            // capture_method it is not yet a payment until captured. Report it pending so
+            // no invoice amounts are applied for a bare authorization
+            $status = 'pending';
         } elseif (isset($stripe_status)) {
             switch ($stripe_status) {
                 case 'requires_capture':
@@ -1996,6 +2001,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
+        // Only report invoice amounts if this transaction has not already been applied to
+        // invoices. Webhooks fire again once an authorized payment is captured, and by then
+        // the capture itself has applied these amounts and closed the invoices, so applying
+        // them a second time would fail validation
+        $invoices = [];
+        $applied = $this->Record->select()
+            ->from('transaction_applied')
+            ->where('transaction_applied.transaction_id', '=', $transaction->id)
+            ->numResults();
+        if (!$applied) {
+            $invoices = $this->parseInvoiceAmounts($payload->data->object->metadata->invoices ?? '');
+        }
+
         return [
             'client_id' => $transaction->client_id,
             'amount' => $this->formatAmount(
@@ -2003,11 +2021,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 strtoupper($payload->data->object->currency ?? ''),
                 'from'
             ),
-            'invoices' => $this->parseInvoiceAmounts($payload->data->object->metadata->invoices ?? ''),
+            'invoices' => $invoices,
             'currency' => strtoupper($payload->data->object->currency) ?? null,
             'status' => $status,
             'reference_id' => $transaction->reference_id,
-            'transaction_id' => $transaction->transaction_id,
+            // The local transaction has no Charge ID until the capture that fulfills an
+            // authorization completes, so fall back to the Charge ID this event reported
+            'transaction_id' => ($transaction->transaction_id ? $transaction->transaction_id : $charge_id),
             'message' => $payload->data->object->failure_message ?? null
         ];
     }
