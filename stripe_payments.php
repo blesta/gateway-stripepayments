@@ -1916,9 +1916,32 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $payload = (object) [];
         }
 
-        // Validate only charge and payment intent events
+        // Filter to charge and payment intent events before spending an API request on anything
+        // else. This reads the unverified payload, so it is advisory only; the same check runs
+        // again below on the event as Stripe reports it
         $object_type = $payload->data->object->object ?? null;
         if (!in_array($object_type, ['charge', 'payment_intent'])) {
+            return false;
+        }
+
+        // Webhooks are unauthenticated, so only the event ID is taken from the request. The event
+        // itself is fetched from Stripe, so a forged or tampered payload can influence nothing
+        // beyond this point: a fabricated event ID fails to retrieve, and a real one returns what
+        // actually happened regardless of what was posted
+        $event_id = $payload->id ?? null;
+        if (!is_string($event_id) || !str_starts_with($event_id, 'evt_')) {
+            return false;
+        }
+
+        $payload = $this->handleApiRequest(
+            ['Stripe\Event', 'retrieve'],
+            [$event_id],
+            $this->base_url . 'event - retrieve'
+        );
+
+        // Validate only charge and payment intent events
+        $object_type = $payload->data->object->object ?? null;
+        if ($this->Input->errors() || !in_array($object_type, ['charge', 'payment_intent'])) {
             return false;
         }
 
@@ -1943,34 +1966,63 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             return false;
         }
 
-        $transaction = $this->Record->select()
+        // Scope the match to this company's transactions for this gateway; a multi-company
+        // install may share one Stripe account, and identifiers are not unique across gateways
+        $transaction = $this->Record->select(['transactions.*'])
             ->from('transactions')
+            ->innerJoin('gateways', 'gateways.id', '=', 'transactions.gateway_id', false)
+            ->where('gateways.class', '=', 'stripe_payments')
+            ->where('gateways.company_id', '=', Configure::get('Blesta.company_id'))
                 ->open()
                     ->where('transactions.transaction_id', 'in', $identifiers)
                     ->orWhere('transactions.reference_id', 'in', $identifiers)
                 ->close()
+            ->order(['transactions.id' => 'desc'])
             ->fetch();
 
+        if (empty($transaction->client_id)) {
+            return false;
+        }
+
         $latest_charge = null;
+        $live_intent = null;
         if (!empty($charge_id)) {
             $latest_charge = $this->handleApiRequest(
                 ['Stripe\Charge', 'retrieve'],
                 [$charge_id],
                 $this->base_url . 'charge - retrieve'
             );
-        }
+        } elseif (!empty($payment_intent_id)) {
+            // A retrieved event is an authentic snapshot of the moment it occurred, not current
+            // state, and events are not guaranteed to arrive in order. With no charge to re-fetch,
+            // take the PaymentIntent's live state so a stale event cannot report an outdated
+            // outcome, such as resurrecting a payment that has since failed
+            $live_intent = $this->handleApiRequest(
+                ['Stripe\PaymentIntent', 'retrieve'],
+                [$payment_intent_id],
+                $this->base_url . 'payment_intents - retrieve'
+            );
 
-        if (empty($transaction->client_id)) {
-            return false;
+            // The live PaymentIntent may also hold a Charge the stale event predates; report its
+            // ID rather than none at all
+            $charge_id = $live_intent->latest_charge ?? $charge_id;
         }
 
         // Get event status
         $status = 'error';
-        $stripe_status = $latest_charge->status ?? $payload->data->object->status ?? 'failed';
+        $stripe_status = $latest_charge->status
+            ?? $live_intent->status
+            ?? $payload->data->object->status
+            ?? 'failed';
 
         // Check if charge was refunded before mapping status
         if ($latest_charge->refunded ?? $payload->data->object->refunded ?? false) {
             $status = 'refunded';
+        } elseif (($latest_charge->captured ?? $payload->data->object->captured ?? true) === false) {
+            // A Charge reports 'succeeded' as soon as it is authorized, but with a manual
+            // capture_method it is not yet a payment until captured. Report it pending so
+            // no invoice amounts are applied for a bare authorization
+            $status = 'pending';
         } elseif (isset($stripe_status)) {
             switch ($stripe_status) {
                 case 'requires_capture':
@@ -1996,18 +2048,36 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
+        // A charge reports its full authorized amount even when only part of it was captured, so
+        // once captured, the captured amount is the money that actually moved. Until then, the
+        // authorized amount is all there is to report
+        if (($latest_charge->captured ?? $payload->data->object->captured ?? null) === true) {
+            $amount = $latest_charge->amount_captured
+                ?? $payload->data->object->amount_captured
+                ?? $payload->data->object->amount
+                ?? 0;
+        } elseif (!empty($live_intent->amount_received)) {
+            // Likewise, the live PaymentIntent reports the money actually received where the
+            // stale event it stands in for could not
+            $amount = $live_intent->amount_received;
+        } else {
+            $amount = $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0;
+        }
+
         return [
             'client_id' => $transaction->client_id,
             'amount' => $this->formatAmount(
-                $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0,
+                $amount,
                 strtoupper($payload->data->object->currency ?? ''),
                 'from'
             ),
             'invoices' => $this->parseInvoiceAmounts($payload->data->object->metadata->invoices ?? ''),
-            'currency' => strtoupper($payload->data->object->currency) ?? null,
+            'currency' => strtoupper($payload->data->object->currency ?? ''),
             'status' => $status,
             'reference_id' => $transaction->reference_id,
-            'transaction_id' => $transaction->transaction_id,
+            // The local transaction has no Charge ID until the capture that fulfills an
+            // authorization completes, so fall back to the Charge ID this event reported
+            'transaction_id' => ($transaction->transaction_id ? $transaction->transaction_id : $charge_id),
             'message' => $payload->data->object->failure_message ?? null
         ];
     }
