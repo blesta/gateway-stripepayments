@@ -13,7 +13,7 @@ $lang['StripePayments.!error.india_mandate_max_amount.format'] = 'Please enter a
 
 $lang['StripePayments.!error.setup_intent_missing'] = 'The bank account verification could not be found. Please remove this payment account and add it again.';
 $lang['StripePayments.!error.verification_incomplete'] = 'This bank account could not be verified. Please check the details you entered and try again.';
-$lang['StripePayments.!error.account_customer_mismatch'] = 'This bank account is not associated with your account and cannot be verified.';
+$lang['StripePayments.!error.account_customer_mismatch'] = 'This bank account is not associated with your account and cannot be used.';
 $lang['StripePayments.!error.payment_method_microdeposit_verification_attempts_exceeded'] = 'You have exceeded the number of allowed verification attempts. Please remove this payment account and add it again.';
 $lang['StripePayments.!error.payment_method_microdeposit_verification_timeout'] = 'This bank account was not verified within the allowed time. Please remove this payment account and add it again.';
 $lang['StripePayments.!error.payment_method_microdeposit_failed'] = 'We could not send deposits to this bank account. Please check the account details and try again.';

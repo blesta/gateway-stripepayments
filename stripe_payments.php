@@ -364,7 +364,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Reuse a Customer created earlier this session for this client, to avoid creating an
         // orphan Stripe Customer on every form render before the first successful card save
-        $session_key = 'stripe_payments_customer_' . $this->gateway_id . '_' . $this->client_id;
+        $session_key = $this->customerSessionKey($this->client_id);
         $cached_customer_id = $this->Session->read($session_key);
         if (!empty($cached_customer_id)) {
             return $cached_customer_id;
@@ -411,6 +411,71 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->Session->write($session_key, $customer->id);
 
         return $customer->id;
+    }
+
+    /**
+     * Builds the session key under which the Stripe Customer created for a client this
+     * session is cached
+     *
+     * @param int $client_id The ID of the client
+     * @return string The session key
+     */
+    private function customerSessionKey($client_id)
+    {
+        return 'stripe_payments_customer_' . $this->gateway_id . '_' . $client_id;
+    }
+
+    /**
+     * Determines whether the given Stripe Customer belongs to the given client. A Customer is the
+     * client's when it is the one Blesta passed for this request, is on file for any of the
+     * client's payment accounts under this gateway, or was created for the client earlier this
+     * session. Used to reject browser-posted references to another customer's payment details
+     *
+     * @param int $client_id The ID of the client
+     * @param string $customer_id The ID of the Stripe Customer to check
+     * @param string $client_reference_id The reference ID Blesta has on record for the client
+     *  making this request, if any
+     * @return bool True if the Stripe Customer belongs to the client
+     */
+    private function isClientCustomer($client_id, $customer_id, $client_reference_id = null)
+    {
+        if (empty($customer_id)) {
+            return false;
+        }
+
+        if (!empty($client_reference_id) && $customer_id == $client_reference_id) {
+            return true;
+        }
+
+        if (empty($client_id)) {
+            return false;
+        }
+
+        Loader::loadComponents($this, ['Record', 'Session']);
+
+        // The Customer stored against any of the client's payment accounts under this gateway.
+        // Both account types are checked because the Customer may have been created for one type
+        // and reused for the other
+        foreach (['accounts_cc', 'accounts_ach'] as $table) {
+            $account = $this->Record->select([$table . '.id'])
+                ->from($table)
+                ->innerJoin('contacts', 'contacts.id', '=', $table . '.contact_id', false)
+                ->where('contacts.client_id', '=', $client_id)
+                ->where($table . '.gateway_id', '=', $this->gateway_id)
+                ->where($table . '.client_reference_id', '=', $customer_id)
+                ->where($table . '.status', '!=', 'inactive')
+                ->fetch();
+
+            if ($account) {
+                return true;
+            }
+        }
+
+        // The Customer created for this client earlier this session, before its first payment
+        // account has been stored
+        $session_customer_id = $this->Session->read($this->customerSessionKey($client_id));
+
+        return !empty($session_customer_id) && $customer_id == $session_customer_id;
     }
 
     /**
@@ -1655,15 +1720,33 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // An account that still needs microdeposit verification cannot be attached to a customer yet,
         // so the SetupIntent's status decides both what to do about a failed attach below and what
         // status to report back to Blesta
-        $verified = ($this->getSetupIntentStatus($reference_id) === 'succeeded');
+        $intent = $this->getSetupIntent($reference_id);
+        $verified = (($intent->status ?? null) === 'succeeded');
 
         // This lookup is informational. Failing it must not fail the whole store, and reporting the
         // account as unverified is the safe default because verification can still be completed
         $this->Input->setErrors([]);
 
         // A SetupIntent created against a Customer attaches the PaymentMethod itself once the setup
-        // succeeds, so prefer whichever Customer Stripe already associated with it
-        $customer_id = ($account->customer ?? null) ?: $client_reference_id;
+        // succeeds, so prefer whichever Customer Stripe already associated with it. While
+        // microdeposits are pending the PaymentMethod is not attached yet, so fall back to the
+        // Customer the SetupIntent will attach it to once verification completes
+        $customer_id = ($account->customer ?? null) ?: ($intent->customer ?? null);
+
+        // The reference ID is posted from the browser, so the Customer Stripe associates with it must
+        // belong to this client. Without this check a crafted PaymentMethod ID could graft another
+        // customer's bank account onto this client and debit it through processStoredAch()
+        if (!empty($customer_id)
+            && !$this->isClientCustomer(($contact['client_id'] ?? null), $customer_id, $client_reference_id)
+        ) {
+            $this->Input->setErrors(
+                ['store' => ['error' => Language::_('StripePayments.!error.account_customer_mismatch', true)]]
+            );
+
+            return false;
+        }
+
+        $customer_id = $customer_id ?: $client_reference_id;
 
         if (empty($customer_id)) {
             // No customer on record for this client yet, create one from the billing contact
@@ -1950,6 +2033,17 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         );
 
         if ($this->Input->errors()) {
+            return false;
+        }
+
+        // Never report success for a PaymentMethod that Stripe attached to a Customer other than
+        // the one on record for this client, which would mark another customer's bank account as
+        // verified and usable on this client
+        if (!empty($account->customer) && $account->customer != $client_reference_id) {
+            $this->Input->setErrors(
+                ['verify' => ['error' => Language::_('StripePayments.!error.account_customer_mismatch', true)]]
+            );
+
             return false;
         }
 
