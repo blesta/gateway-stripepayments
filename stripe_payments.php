@@ -1916,9 +1916,32 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $payload = (object) [];
         }
 
-        // Validate only charge and payment intent events
+        // Filter to charge and payment intent events before spending an API request on anything
+        // else. This reads the unverified payload, so it is advisory only; the same check runs
+        // again below on the event as Stripe reports it
         $object_type = $payload->data->object->object ?? null;
         if (!in_array($object_type, ['charge', 'payment_intent'])) {
+            return false;
+        }
+
+        // Webhooks are unauthenticated, so only the event ID is taken from the request. The event
+        // itself is fetched from Stripe, so a forged or tampered payload can influence nothing
+        // beyond this point: a fabricated event ID fails to retrieve, and a real one returns what
+        // actually happened regardless of what was posted
+        $event_id = $payload->id ?? null;
+        if (!is_string($event_id) || !str_starts_with($event_id, 'evt_')) {
+            return false;
+        }
+
+        $payload = $this->handleApiRequest(
+            ['Stripe\Event', 'retrieve'],
+            [$event_id],
+            $this->base_url . 'event - retrieve'
+        );
+
+        // Validate only charge and payment intent events
+        $object_type = $payload->data->object->object ?? null;
+        if ($this->Input->errors() || !in_array($object_type, ['charge', 'payment_intent'])) {
             return false;
         }
 
@@ -1962,17 +1985,35 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         $latest_charge = null;
+        $live_intent = null;
         if (!empty($charge_id)) {
             $latest_charge = $this->handleApiRequest(
                 ['Stripe\Charge', 'retrieve'],
                 [$charge_id],
                 $this->base_url . 'charge - retrieve'
             );
+        } elseif (!empty($payment_intent_id)) {
+            // A retrieved event is an authentic snapshot of the moment it occurred, not current
+            // state, and events are not guaranteed to arrive in order. With no charge to re-fetch,
+            // take the PaymentIntent's live state so a stale event cannot report an outdated
+            // outcome, such as resurrecting a payment that has since failed
+            $live_intent = $this->handleApiRequest(
+                ['Stripe\PaymentIntent', 'retrieve'],
+                [$payment_intent_id],
+                $this->base_url . 'payment_intents - retrieve'
+            );
+
+            // The live PaymentIntent may also hold a Charge the stale event predates; report its
+            // ID rather than none at all
+            $charge_id = $live_intent->latest_charge ?? $charge_id;
         }
 
         // Get event status
         $status = 'error';
-        $stripe_status = $latest_charge->status ?? $payload->data->object->status ?? 'failed';
+        $stripe_status = $latest_charge->status
+            ?? $live_intent->status
+            ?? $payload->data->object->status
+            ?? 'failed';
 
         // Check if charge was refunded before mapping status
         if ($latest_charge->refunded ?? $payload->data->object->refunded ?? false) {
@@ -2007,10 +2048,26 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
+        // A charge reports its full authorized amount even when only part of it was captured, so
+        // once captured, the captured amount is the money that actually moved. Until then, the
+        // authorized amount is all there is to report
+        if (($latest_charge->captured ?? $payload->data->object->captured ?? null) === true) {
+            $amount = $latest_charge->amount_captured
+                ?? $payload->data->object->amount_captured
+                ?? $payload->data->object->amount
+                ?? 0;
+        } elseif (!empty($live_intent->amount_received)) {
+            // Likewise, the live PaymentIntent reports the money actually received where the
+            // stale event it stands in for could not
+            $amount = $live_intent->amount_received;
+        } else {
+            $amount = $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0;
+        }
+
         return [
             'client_id' => $transaction->client_id,
             'amount' => $this->formatAmount(
-                $payload->data->object->amount ?? $payload->data->object->amount_captured ?? 0,
+                $amount,
                 strtoupper($payload->data->object->currency ?? ''),
                 'from'
             ),
