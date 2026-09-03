@@ -85,9 +85,35 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         $this->view->set('legacy_stripe_installed', $legacy_stripe_installed);
+        $this->view->set('legacy_ach_accounts', $this->countLegacyAchAccounts());
         $this->view->set('meta', $meta);
 
         return $this->view->fetch();
+    }
+
+    /**
+     * Counts the bank accounts still stored through Stripe's deprecated Sources API. These continue
+     * to charge normally, but cannot be converted to PaymentMethods without the client re-entering
+     * their bank account, so the count is reported to the admin rather than migrated automatically
+     *
+     * @return int The number of bank accounts stored as legacy sources
+     */
+    private function countLegacyAchAccounts()
+    {
+        $gateways = $this->GatewayManager->getByClass('stripe_payments', Configure::get('Blesta.company_id'));
+        if (empty($gateways)) {
+            return 0;
+        }
+
+        $record = new Record;
+
+        return $record->select()->
+            from('accounts_ach')->
+            where('gateway_id', '=', $gateways[0]->id)->
+            where('reference_id', '!=', null)->
+            notLike('reference_id', 'pm_%')->
+            where('status', '!=', 'inactive')->
+            numResults();
     }
 
     /**
@@ -317,24 +343,28 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         Loader::loadComponents($this, ['Record', 'Session']);
 
-        // Reuse the Customer already on file for this client and gateway, if any
-        $account = $this->Record->select(['accounts_cc.client_reference_id'])
-            ->from('accounts_cc')
-            ->innerJoin('contacts', 'contacts.id', '=', 'accounts_cc.contact_id', false)
-            ->where('contacts.client_id', '=', $this->client_id)
-            ->where('accounts_cc.gateway_id', '=', $this->gateway_id)
-            ->where('accounts_cc.client_reference_id', '!=', null)
-            ->where('accounts_cc.status', '=', 'active')
-            ->order(['accounts_cc.id' => 'desc'])
-            ->fetch();
+        // Reuse the Customer already on file for this client and gateway, if any. Both payment account
+        // types are checked so a client that only has a bank account on file still resolves to their
+        // existing Customer rather than having a second one created
+        foreach (['accounts_cc', 'accounts_ach'] as $table) {
+            $account = $this->Record->select([$table . '.client_reference_id'])
+                ->from($table)
+                ->innerJoin('contacts', 'contacts.id', '=', $table . '.contact_id', false)
+                ->where('contacts.client_id', '=', $this->client_id)
+                ->where($table . '.gateway_id', '=', $this->gateway_id)
+                ->where($table . '.client_reference_id', '!=', null)
+                ->where($table . '.status', '!=', 'inactive')
+                ->order([$table . '.id' => 'desc'])
+                ->fetch();
 
-        if (!empty($account->client_reference_id)) {
-            return $account->client_reference_id;
+            if (!empty($account->client_reference_id)) {
+                return $account->client_reference_id;
+            }
         }
 
         // Reuse a Customer created earlier this session for this client, to avoid creating an
         // orphan Stripe Customer on every form render before the first successful card save
-        $session_key = 'stripe_payments_customer_' . $this->gateway_id . '_' . $this->client_id;
+        $session_key = $this->customerSessionKey($this->client_id);
         $cached_customer_id = $this->Session->read($session_key);
         if (!empty($cached_customer_id)) {
             return $cached_customer_id;
@@ -381,6 +411,71 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         $this->Session->write($session_key, $customer->id);
 
         return $customer->id;
+    }
+
+    /**
+     * Builds the session key under which the Stripe Customer created for a client this
+     * session is cached
+     *
+     * @param int $client_id The ID of the client
+     * @return string The session key
+     */
+    private function customerSessionKey($client_id)
+    {
+        return 'stripe_payments_customer_' . $this->gateway_id . '_' . $client_id;
+    }
+
+    /**
+     * Determines whether the given Stripe Customer belongs to the given client. A Customer is the
+     * client's when it is the one Blesta passed for this request, is on file for any of the
+     * client's payment accounts under this gateway, or was created for the client earlier this
+     * session. Used to reject browser-posted references to another customer's payment details
+     *
+     * @param int $client_id The ID of the client
+     * @param string $customer_id The ID of the Stripe Customer to check
+     * @param string $client_reference_id The reference ID Blesta has on record for the client
+     *  making this request, if any
+     * @return bool True if the Stripe Customer belongs to the client
+     */
+    private function isClientCustomer($client_id, $customer_id, $client_reference_id = null)
+    {
+        if (empty($customer_id)) {
+            return false;
+        }
+
+        if (!empty($client_reference_id) && $customer_id == $client_reference_id) {
+            return true;
+        }
+
+        if (empty($client_id)) {
+            return false;
+        }
+
+        Loader::loadComponents($this, ['Record', 'Session']);
+
+        // The Customer stored against any of the client's payment accounts under this gateway.
+        // Both account types are checked because the Customer may have been created for one type
+        // and reused for the other
+        foreach (['accounts_cc', 'accounts_ach'] as $table) {
+            $account = $this->Record->select([$table . '.id'])
+                ->from($table)
+                ->innerJoin('contacts', 'contacts.id', '=', $table . '.contact_id', false)
+                ->where('contacts.client_id', '=', $client_id)
+                ->where($table . '.gateway_id', '=', $this->gateway_id)
+                ->where($table . '.client_reference_id', '=', $customer_id)
+                ->where($table . '.status', '!=', 'inactive')
+                ->fetch();
+
+            if ($account) {
+                return true;
+            }
+        }
+
+        // The Customer created for this client earlier this session, before its first payment
+        // account has been stored
+        $session_customer_id = $this->Session->read($this->customerSessionKey($client_id));
+
+        return !empty($session_customer_id) && $customer_id == $session_customer_id;
     }
 
     /**
@@ -716,9 +811,12 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      * @param callable $api_method The function to execute
      * @param array $params The parameters to pass to the function
      * @param string $log_url The url to associate with the logs for this request
+     * @param bool $detailed_errors True to surface the error Stripe returned rather than a generic
+     *  failure message. Use for requests whose specific failure the client must act on, such as a
+     *  mismatched microdeposit amount that reports how many attempts remain
      * @return mixed False on error, other wise an object representing the Stripe response
      */
-    private function handleApiRequest($api_method, array $params, $log_url)
+    private function handleApiRequest($api_method, array $params, $log_url, $detailed_errors = false)
     {
         $this->loadApi();
 
@@ -776,7 +874,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Set any errors
         if (!empty($errors)) {
-            $this->Input->setErrors($this->getCommonError('general'));
+            $this->Input->setErrors($detailed_errors ? $errors : $this->getCommonError('general'));
         }
 
         // Log the request
@@ -786,7 +884,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $response = (object) $loggable_response;
             $response->status = 'error';
 
-            if (is_string($loggable_response['error'])) {
+            if (is_string($loggable_response['error'] ?? null)) {
                 $response->error = (object) ['message' => $loggable_response['error']];
             }
         }
@@ -1378,31 +1476,42 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         Loader::loadModels($this, ['Accounts', 'Companies']);
         Loader::loadHelpers($this, ['Form', 'Html']);
 
-        // Declare to Stripe the possibility of us creating a bank account PaymentMethod through this page
-        // This is confirmed in the view using stripe.handleCardSetup
+        // An account already on file means this is an edit, where the stored bank account is
+        // shown instead of the collection flow until the customer asks to replace it
+        $account_info = (array) $account_info;
+        $editing = !empty($account_info['reference_id']);
+
+        // A bank account held as a legacy source cannot be carried forward, so the customer is
+        // asked to connect it again rather than being offered the option to keep it
+        $legacy = $editing && !$this->isPaymentMethod($account_info['reference_id']);
+
+        // Declare to Stripe the possibility of us creating a us_bank_account PaymentMethod through this
+        // page. The view collects the account with stripe.collectBankAccountForSetup() and completes it
+        // with stripe.confirmUsBankAccountSetup(), both of which need this SetupIntent's client secret.
+        // Omitting payment_method_options.us_bank_account.verification_method leaves Stripe on its
+        // default, which offers instant verification with manual entry and microdeposits as a fallback
+        $params = [
+            'payment_method_types' => ['us_bank_account'],
+            'payment_method_options' => [
+                'us_bank_account' => [
+                    'financial_connections' => ['permissions' => ['payment_method']]
+                ]
+            ]
+        ];
+
+        // Attach the SetupIntent to a Stripe Customer so the resulting PaymentMethod is saved against it
+        // once the setup succeeds. Without a Customer there is nothing for Stripe to attach the account to
+        $customer_id = $this->getClientCustomerId();
+        if ($customer_id) {
+            $params['customer'] = $customer_id;
+            $params['usage'] = 'off_session';
+        }
+
         $setup_intent = $this->handleApiRequest(
             ['Stripe\SetupIntent', 'create'],
-            [],
+            [$params],
             $this->base_url . 'setup_intents - create'
         );
-
-        // Determine whether the stored bank account, if any, has been verified with Stripe
-        $verified = true;
-        if (!empty($account_info['reference_id']) && !empty($account_info['client_reference_id'])) {
-            $account = $this->handleApiRequest(
-                ['Stripe\Customer', 'retrieveSource'],
-                [$account_info['client_reference_id'], $account_info['reference_id']],
-                $this->base_url . 'customers - retrieveSource'
-            );
-
-            // Being unable to fetch the account is not fatal here, this form only collects new bank
-            // account details, so discard the error and treat the account as unverified
-            if ($this->Input->errors()) {
-                $this->Input->setErrors([]);
-            }
-
-            $verified = $this->achVerified($account);
-        }
 
         // Check if Stripe.js is already loaded
         $load_stripe = false;
@@ -1411,23 +1520,42 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $load_stripe = true;
         }
 
-        // Set select options
-        $holder_types = [
-            'individual' => Language::_('StripePayments.ach_form.field_holder_type_individual', true),
-            'company' => Language::_('StripePayments.ach_form.field_holder_type_company', true)
-        ];
-
         $this->view->set('load_stripe', $load_stripe);
         $this->view->set('setup_intent', $setup_intent);
         $this->view->set('meta', $this->meta);
         $this->view->set('app_info', $this->getAppInfo());
-        $this->view->set('types', $this->Accounts->getAchTypes());
-        $this->view->set('verified', $verified);
-        $this->view->set('holder_types', $holder_types);
+        $this->view->set('billing_email', $this->getClientEmail());
+        $this->view->set('editing', $editing);
+        $this->view->set('legacy', $legacy);
         $this->view->set('account_info', $account_info);
+        $this->view->set('types', $this->Accounts->getAchTypes());
         $this->view->set('company', $this->Companies->get(Configure::get('Blesta.company_id')));
 
         return $this->view->fetch();
+    }
+
+    /**
+     * Fetches the email address of the current client's primary contact. Stripe requires a billing
+     * email on ACH Direct Debit PaymentMethods in order to send the mandate confirmation and, where
+     * needed, the microdeposit notification
+     *
+     * @return string The client's primary contact email, or an empty string if unavailable
+     */
+    private function getClientEmail()
+    {
+        if (empty($this->client_id)) {
+            return '';
+        }
+
+        Loader::loadComponents($this, ['Record']);
+
+        $contact = $this->Record->select(['email'])
+            ->from('contacts')
+            ->where('client_id', '=', $this->client_id)
+            ->where('contact_type', '=', 'primary')
+            ->fetch();
+
+        return $contact->email ?? '';
     }
 
     /**
@@ -1443,7 +1571,45 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function getAchAccountStatus($client_reference_id, $account_reference_id)
     {
-        if (empty($client_reference_id) || empty($account_reference_id)) {
+        if (empty($account_reference_id)) {
+            return null;
+        }
+
+        // A bank account collected as a us_bank_account PaymentMethod is verified through its
+        // SetupIntent, and is only attached to a Customer once that verification succeeds, so
+        // either signal is proof the account is usable for debits
+        if ($this->isPaymentMethod($account_reference_id)) {
+            $account = $this->handleApiRequest(
+                ['Stripe\PaymentMethod', 'retrieve'],
+                [$account_reference_id],
+                $this->base_url . 'payment_methods - retrieve'
+            );
+
+            // The status cannot be determined when the PaymentMethod could not be fetched. Discard
+            // the error so the caller keeps the status it already has rather than failing
+            if ($this->Input->errors()) {
+                $this->Input->setErrors([]);
+
+                return null;
+            }
+
+            if (!empty($account->customer)) {
+                return 'active';
+            }
+
+            $intent_status = $this->getSetupIntentStatus($account_reference_id);
+
+            if ($this->Input->errors()) {
+                $this->Input->setErrors([]);
+
+                return null;
+            }
+
+            return ($intent_status === null ? null : ($intent_status === 'succeeded' ? 'active' : 'unverified'));
+        }
+
+        // Bank account stored through Stripe's deprecated Sources API
+        if (empty($client_reference_id)) {
             return null;
         }
 
@@ -1494,7 +1660,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function buildAchVerificationForm(array $vars = [])
     {
-        return null;
+        // Load the view into this object, so helpers can be automatically added to the view
+        $this->view = $this->makeView(
+            'ach_verification_form',
+            'default',
+            str_replace(ROOTWEBDIR, '', dirname(__FILE__) . DS)
+        );
+
+        // Load the helpers required for this view
+        Loader::loadHelpers($this, ['Form', 'Html']);
+
+        $this->view->set('vars', (object) $vars);
+
+        return $this->view->fetch();
     }
 
     /**
@@ -1526,10 +1704,53 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function storeAch(array $account_info, array $contact, $client_reference_id = null)
     {
-        if ($client_reference_id == null) {
-            // Set fields for the new customer profile
+        $reference_id = ($account_info['reference_id'] ?? null);
+
+        // Get the us_bank_account PaymentMethod created by the SetupIntent in the ACH form
+        $account = $this->handleApiRequest(
+            ['Stripe\PaymentMethod', 'retrieve'],
+            [$reference_id],
+            $this->base_url . 'payment_methods - retrieve'
+        );
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        // An account that still needs microdeposit verification cannot be attached to a customer yet,
+        // so the SetupIntent's status decides both what to do about a failed attach below and what
+        // status to report back to Blesta
+        $intent = $this->getSetupIntent($reference_id);
+        $verified = (($intent->status ?? null) === 'succeeded');
+
+        // This lookup is informational. Failing it must not fail the whole store, and reporting the
+        // account as unverified is the safe default because verification can still be completed
+        $this->Input->setErrors([]);
+
+        // A SetupIntent created against a Customer attaches the PaymentMethod itself once the setup
+        // succeeds, so prefer whichever Customer Stripe already associated with it. While
+        // microdeposits are pending the PaymentMethod is not attached yet, so fall back to the
+        // Customer the SetupIntent will attach it to once verification completes
+        $customer_id = ($account->customer ?? null) ?: ($intent->customer ?? null);
+
+        // The reference ID is posted from the browser, so the Customer Stripe associates with it must
+        // belong to this client. Without this check a crafted PaymentMethod ID could graft another
+        // customer's bank account onto this client and debit it through processStoredAch()
+        if (!empty($customer_id)
+            && !$this->isClientCustomer(($contact['client_id'] ?? null), $customer_id, $client_reference_id)
+        ) {
+            $this->Input->setErrors(
+                ['store' => ['error' => Language::_('StripePayments.!error.account_customer_mismatch', true)]]
+            );
+
+            return false;
+        }
+
+        $customer_id = $customer_id ?: $client_reference_id;
+
+        if (empty($customer_id)) {
+            // No customer on record for this client yet, create one from the billing contact
             $fields = [
-                'source' => ($account_info['reference_id'] ?? null),
                 'email' => ($contact['email'] ?? null),
                 'name' => (!empty($contact['first_name']) && !empty($contact['last_name']) ?
                     ($contact['first_name'] ?? null) . ' ' . ($contact['last_name'] ?? null) : '')
@@ -1544,56 +1765,86 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                     'postal_code' => ($contact['zip'] ?? null)
                 ];
             }
+
             $customer = $this->handleApiRequest(
                 ['Stripe\Customer', 'create'],
                 [$fields],
                 $this->base_url . 'customers - create'
             );
 
-            if (isset($customer->default_source)) {
-                $account_info['reference_id'] = $customer->default_source;
-            }
-        } else {
-            // Attach the bank account to the existing customer
-            $customer = $this->handleApiRequest(
-                ['Stripe\Customer', 'retrieve'],
-                [$client_reference_id],
-                $this->base_url . 'customers - retrieve'
-            );
-            $source = $this->handleApiRequest(
-                ['Stripe\Customer', 'createSource'],
-                [($customer->id ?? $client_reference_id), ['source' => $account_info['reference_id']]],
-                $this->base_url . 'customers - createSource'
-            );
-
-            // Fetch the source
-            if (isset($source->id)) {
-                $account_info['reference_id'] = $source->id;
-            }
-
             if ($this->Input->errors()) {
                 return false;
             }
+
+            $customer_id = ($customer->id ?? null);
         }
 
-        // Get bank account
-        $account = $this->handleApiRequest(
-            ['Stripe\Customer', 'retrieveSource'],
-            [($customer->id ?? $client_reference_id), $account_info['reference_id']],
-            $this->base_url . 'customers - retrieveSource'
-        );
+        if (empty($customer_id)) {
+            $this->Input->setErrors($this->getCommonError('general'));
 
-        if ($this->Input->errors()) {
             return false;
         }
 
-        // Return the reference IDs and bank account information
+        // Attach the PaymentMethod unless the SetupIntent already did so
+        if (empty($account->customer)) {
+            $this->handleApiRequest(
+                function ($customer_id, $account) {
+                    return $account->attach(['customer' => $customer_id]);
+                },
+                [$customer_id, $account],
+                $this->base_url . 'payment_methods - attach'
+            );
+
+            if ($this->Input->errors()) {
+                if ($verified) {
+                    return false;
+                }
+
+                // Expected while microdeposits are pending. verifyAch() attaches the account once
+                // the customer confirms the deposit and the SetupIntent succeeds
+                $this->Input->setErrors([]);
+            }
+        }
+
+        // Return the reference IDs and bank account information. The status tells Blesta whether the
+        // account still needs microdeposit verification; instantly verified accounts are usable now
         return [
-            'client_reference_id' => ($customer->id ?? $client_reference_id),
-            'reference_id' => ($account_info['reference_id'] ?? null),
-            'last4' => ($account->last4 ?? null),
-            'status' => $this->getAchStatus($account)
+            'client_reference_id' => $customer_id,
+            'reference_id' => $reference_id,
+            'last4' => ($account->us_bank_account->last4 ?? null),
+            'type' => ($account->us_bank_account->account_type ?? 'checking'),
+            'status' => ($verified ? 'active' : 'unverified')
         ];
+    }
+
+    /**
+     * Fetches the SetupIntent that collected the given PaymentMethod
+     *
+     * @param string $payment_method_id The ID of the us_bank_account PaymentMethod
+     * @return Stripe\SetupIntent|null The most recent SetupIntent for this PaymentMethod, if any
+     */
+    private function getSetupIntent($payment_method_id)
+    {
+        $intents = $this->handleApiRequest(
+            ['Stripe\SetupIntent', 'all'],
+            [['payment_method' => $payment_method_id, 'limit' => 1]],
+            $this->base_url . 'setup_intents - all'
+        );
+
+        return $intents->data[0] ?? null;
+    }
+
+    /**
+     * Fetches the status of the SetupIntent that collected the given PaymentMethod
+     *
+     * @param string $payment_method_id The ID of the us_bank_account PaymentMethod
+     * @return string|null The SetupIntent status, or null if no SetupIntent was found
+     */
+    private function getSetupIntentStatus($payment_method_id)
+    {
+        $intent = $this->getSetupIntent($payment_method_id);
+
+        return $intent->status ?? null;
     }
 
     /**
@@ -1601,32 +1852,12 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function updateAch(array $account_info, array $contact, $client_reference_id, $account_reference_id)
     {
-        // The reference ID given must be a single-use token created for a new bank account. When it is
-        // missing, or is still the ID of the bank account already stored off site, there are no new bank
-        // details to store, so leave the existing bank account attached to the customer untouched
+        // No new bank account was collected when the reference ID is missing, or is still the ID of
+        // the bank account already stored off site, so the customer is only changing their contact
+        // details. Keep the account already on file rather than asking them to re-enter it
         $reference_id = ($account_info['reference_id'] ?? null);
         if (empty($reference_id) || $reference_id == $account_reference_id) {
-            $account = $this->handleApiRequest(
-                ['Stripe\Customer', 'retrieveSource'],
-                [$client_reference_id, $account_reference_id],
-                $this->base_url . 'customers - retrieveSource'
-            );
-
-            if ($this->Input->errors()) {
-                return false;
-            }
-
-            $account_data = [
-                'client_reference_id' => $client_reference_id,
-                'reference_id' => $account_reference_id,
-                'status' => $this->getAchStatus($account)
-            ];
-
-            if (!empty($account->last4)) {
-                $account_data['last4'] = $account->last4;
-            }
-
-            return $account_data;
+            return $this->refreshStoredAch($account_info, $contact, $client_reference_id, $account_reference_id);
         }
 
         // Add a new bank account to the same client
@@ -1646,9 +1877,214 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     }
 
     /**
+     * Updates the Stripe Customer's contact details while leaving the bank account already on
+     * file in place. Used when a payment account is edited without collecting a new one
+     *
+     * @param array $account_info An array of bank account info
+     * @param array $contact An array of contact information for the billing contact
+     * @param string $client_reference_id The reference ID for the client on the remote gateway
+     * @param string $account_reference_id The reference ID for the stored account on the remote gateway
+     * @return mixed False on failure or an array containing:
+     *
+     *  - client_reference_id The reference ID for this client
+     *  - reference_id The reference ID for this payment account
+     *  - last4 The last 4 digits of the account number
+     *  - type The bank account type
+     *  - status Whether the account is usable or still awaiting verification
+     */
+    private function refreshStoredAch(
+        array $account_info,
+        array $contact,
+        $client_reference_id,
+        $account_reference_id
+    ) {
+        if (empty($account_reference_id)) {
+            $this->Input->setErrors($this->getCommonError('general'));
+
+            return false;
+        }
+
+        // Keep the Customer's billing details in step with the contact
+        if ($client_reference_id) {
+            $fields = [
+                'email' => ($contact['email'] ?? null),
+                'name' => (!empty($contact['first_name']) && !empty($contact['last_name']) ?
+                    ($contact['first_name'] ?? null) . ' ' . ($contact['last_name'] ?? null) : '')
+            ];
+            if (!empty($contact['address1'])) {
+                $fields['address'] = [
+                    'line1' => ($contact['address1'] ?? null),
+                    'line2' => ($contact['address2'] ?? null),
+                    'city' => ($contact['city'] ?? null),
+                    'state' => ($contact['state'] ?? null),
+                    'country' => ($contact['country'] ?? null),
+                    'postal_code' => ($contact['zip'] ?? null)
+                ];
+            }
+
+            $this->handleApiRequest(
+                ['Stripe\Customer', 'update'],
+                [$client_reference_id, $fields],
+                $this->base_url . 'customers - update'
+            );
+
+            // Failing to mirror the address must not stop Blesta recording the contact change
+            $this->Input->setErrors([]);
+        }
+
+        // Re-read the account so the details Blesta stores stay authoritative. Blesta overwrites
+        // last4 with whatever is returned here, so it has to come back even though it is unchanged
+        $last4 = ($account_info['last4'] ?? null);
+        $type = ($account_info['type'] ?? null);
+
+        if ($this->isPaymentMethod($account_reference_id)) {
+            $account = $this->handleApiRequest(
+                ['Stripe\PaymentMethod', 'retrieve'],
+                [$account_reference_id],
+                $this->base_url . 'payment_methods - retrieve'
+            );
+
+            $last4 = ($account->us_bank_account->last4 ?? $last4);
+            $type = ($account->us_bank_account->account_type ?? $type);
+            $verified = ($this->getSetupIntentStatus($account_reference_id) === 'succeeded');
+        } else {
+            // Bank account stored through Stripe's deprecated Sources API
+            $account = $this->handleApiRequest(
+                ['Stripe\Customer', 'retrieveSource'],
+                [$client_reference_id, $account_reference_id],
+                $this->base_url . 'customers - retrieveSource'
+            );
+
+            $last4 = ($account->last4 ?? $last4);
+            $verified = $this->achVerified($account);
+        }
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        return [
+            'client_reference_id' => $client_reference_id,
+            'reference_id' => $account_reference_id,
+            'last4' => $last4,
+            'type' => $type,
+            'status' => ($verified ? 'active' : 'unverified')
+        ];
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function verifyAch(array $vars, $client_reference_id = null, $account_reference_id = null)
+    {
+        if (!$this->isPaymentMethod($account_reference_id)) {
+            return $this->verifyLegacyAch($vars, $client_reference_id, $account_reference_id);
+        }
+
+        $intent = $this->getSetupIntent($account_reference_id);
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        if (empty($intent)) {
+            $this->Input->setErrors(
+                ['verify' => ['error' => Language::_('StripePayments.!error.setup_intent_missing', true)]]
+            );
+
+            return false;
+        }
+
+        // Nothing to do if the account was already verified, otherwise submit whichever of the two
+        // microdeposit proofs the customer was given. Stripe sends a descriptor code by default and
+        // only falls back to a pair of amounts, so the code takes precedence when both are present
+        if (($intent->status ?? null) !== 'succeeded') {
+            $params = !empty($vars['descriptor_code'])
+                ? ['descriptor_code' => trim($vars['descriptor_code'])]
+                : ['amounts' => [(int) ($vars['first_deposit'] ?? 0), (int) ($vars['second_deposit'] ?? 0)]];
+
+            $intent = $this->handleApiRequest(
+                function ($intent, $params) {
+                    return $intent->verifyMicrodeposits($params);
+                },
+                [$intent, $params],
+                $this->base_url . 'setup_intents - verify_microdeposits',
+                true
+            );
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+        }
+
+        if (($intent->status ?? null) !== 'succeeded') {
+            $this->Input->setErrors(
+                ['verify' => ['error' => Language::_('StripePayments.!error.verification_incomplete', true)]]
+            );
+
+            return false;
+        }
+
+        // The PaymentMethod could not be attached while the account was unverified, so attach it now
+        $account = $this->handleApiRequest(
+            ['Stripe\PaymentMethod', 'retrieve'],
+            [$account_reference_id],
+            $this->base_url . 'payment_methods - retrieve'
+        );
+
+        if ($this->Input->errors()) {
+            return false;
+        }
+
+        // Never report success for a PaymentMethod that Stripe attached to a Customer other than
+        // the one on record for this client, which would mark another customer's bank account as
+        // verified and usable on this client
+        if (!empty($account->customer) && $account->customer != $client_reference_id) {
+            $this->Input->setErrors(
+                ['verify' => ['error' => Language::_('StripePayments.!error.account_customer_mismatch', true)]]
+            );
+
+            return false;
+        }
+
+        if (empty($account->customer) && $client_reference_id) {
+            $this->handleApiRequest(
+                function ($customer_id, $account) {
+                    return $account->attach(['customer' => $customer_id]);
+                },
+                [$client_reference_id, $account],
+                $this->base_url . 'payment_methods - attach'
+            );
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+        }
+
+        return [
+            'client_reference_id' => $client_reference_id,
+            'reference_id' => $account_reference_id,
+            'status' => 'active'
+        ];
+    }
+
+    /**
+     * Verifies a bank account stored through Stripe's deprecated Sources API. Retained so accounts
+     * created before the PaymentMethod flow can still complete verification
+     *
+     * @param array $vars An array including:
+     *
+     *  - first_deposit The first deposit amount
+     *  - second_deposit The second deposit amount
+     * @param string $client_reference_id The reference ID for the client on the remote gateway
+     * @param string $account_reference_id The reference ID for the stored account on the remote gateway
+     * @return mixed False on failure or an array containing:
+     *
+     *  - client_reference_id The reference ID for this client
+     *  - reference_id The reference ID for this payment account
+     *  - status The verification status of the account
+     */
+    private function verifyLegacyAch(array $vars, $client_reference_id = null, $account_reference_id = null)
     {
         // Get bank account
         $account = $this->handleApiRequest(
@@ -1703,15 +2139,50 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
     }
 
     /**
+     * Determines whether a stored payment account reference is a PaymentMethod rather than a
+     * bank account stored through Stripe's deprecated Sources API
+     *
+     * @param string $account_reference_id The reference ID for the stored account on the remote gateway
+     * @return bool True if the reference is a PaymentMethod
+     */
+    private function isPaymentMethod($account_reference_id)
+    {
+        return strpos((string) $account_reference_id, 'pm_') === 0;
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function removeAch($client_reference_id, $account_reference_id)
     {
-        $this->handleApiRequest(
-            ['Stripe\Customer', 'deleteSource'],
-            [$client_reference_id, $account_reference_id],
-            $this->base_url . 'customers - deleteSource'
-        );
+        if ($this->isPaymentMethod($account_reference_id)) {
+            // Get the PaymentMethod from Stripe
+            $account = $this->handleApiRequest(
+                ['Stripe\PaymentMethod', 'retrieve'],
+                [$account_reference_id],
+                $this->base_url . 'payment_methods - retrieve'
+            );
+
+            if ($this->Input->errors()) {
+                return false;
+            }
+
+            // Detach the PaymentMethod from its associated Stripe customer
+            $this->handleApiRequest(
+                function ($account) {
+                    return $account->detach();
+                },
+                [$account],
+                $this->base_url . 'payment_methods - detach'
+            );
+        } else {
+            // Bank account stored through Stripe's deprecated Sources API
+            $this->handleApiRequest(
+                ['Stripe\Customer', 'deleteSource'],
+                [$client_reference_id, $account_reference_id],
+                $this->base_url . 'customers - deleteSource'
+            );
+        }
 
         if ($this->Input->errors()) {
             return false;
