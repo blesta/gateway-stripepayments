@@ -1943,13 +1943,23 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             return false;
         }
 
-        $transaction = $this->Record->select()
+        // Scope the match to this company's transactions for this gateway; a multi-company
+        // install may share one Stripe account, and identifiers are not unique across gateways
+        $transaction = $this->Record->select(['transactions.*'])
             ->from('transactions')
+            ->innerJoin('gateways', 'gateways.id', '=', 'transactions.gateway_id', false)
+            ->where('gateways.class', '=', 'stripe_payments')
+            ->where('gateways.company_id', '=', Configure::get('Blesta.company_id'))
                 ->open()
                     ->where('transactions.transaction_id', 'in', $identifiers)
                     ->orWhere('transactions.reference_id', 'in', $identifiers)
                 ->close()
+            ->order(['transactions.id' => 'desc'])
             ->fetch();
+
+        if (empty($transaction->client_id)) {
+            return false;
+        }
 
         $latest_charge = null;
         if (!empty($charge_id)) {
@@ -1958,10 +1968,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 [$charge_id],
                 $this->base_url . 'charge - retrieve'
             );
-        }
-
-        if (empty($transaction->client_id)) {
-            return false;
         }
 
         // Get event status
@@ -2001,19 +2007,6 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
-        // Only report invoice amounts if this transaction has not already been applied to
-        // invoices. Webhooks fire again once an authorized payment is captured, and by then
-        // the capture itself has applied these amounts and closed the invoices, so applying
-        // them a second time would fail validation
-        $invoices = [];
-        $applied = $this->Record->select()
-            ->from('transaction_applied')
-            ->where('transaction_applied.transaction_id', '=', $transaction->id)
-            ->numResults();
-        if (!$applied) {
-            $invoices = $this->parseInvoiceAmounts($payload->data->object->metadata->invoices ?? '');
-        }
-
         return [
             'client_id' => $transaction->client_id,
             'amount' => $this->formatAmount(
@@ -2021,8 +2014,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 strtoupper($payload->data->object->currency ?? ''),
                 'from'
             ),
-            'invoices' => $invoices,
-            'currency' => strtoupper($payload->data->object->currency) ?? null,
+            'invoices' => $this->parseInvoiceAmounts($payload->data->object->metadata->invoices ?? ''),
+            'currency' => strtoupper($payload->data->object->currency ?? ''),
             'status' => $status,
             'reference_id' => $transaction->reference_id,
             // The local transaction has no Charge ID until the capture that fulfills an
