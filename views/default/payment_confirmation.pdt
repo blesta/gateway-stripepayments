@@ -60,8 +60,11 @@
                 bindSubmit();
 
                 function submitPayment(event) {
-                    // A real submit reaches both the native and the jQuery handler, only confirm once
+                    // A real submit reaches both the native and the jQuery handler, only confirm once.
+                    // Cancel the event so a second submit while confirmation is in flight cannot
+                    // post the form before the PaymentIntent is confirmed
                     if (confirmed) {
+                        event.preventDefault();
                         return;
                     }
 

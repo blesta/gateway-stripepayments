@@ -179,8 +179,11 @@
 
                 // Process submitted card
                 function submitCard(event) {
-                    // A real submit reaches both the native and the jQuery handler, only process once
+                    // A real submit reaches both the native and the jQuery handler, only process once.
+                    // Cancel the event so a second submit while tokenization is in flight cannot
+                    // post the form before the reference_id is set
                     if (submitting) {
+                        event.preventDefault();
                         return;
                     }
 
