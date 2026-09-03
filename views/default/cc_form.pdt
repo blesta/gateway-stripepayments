@@ -22,6 +22,8 @@
                     return;
                 }
 
+                var submitting = false;
+
                 // Load the gateway stylesheet
                 if (!document.querySelector('link[data-stripe-payments]')) {
                     var link = document.createElement('link');
@@ -83,12 +85,19 @@
                 }
 
                 function enableFormSubmission() {
+                    submitting = false;
                     form.dataset.submitted = 'false';
                     form.dataset.submitting = 'false';
                     form.querySelectorAll('input[type="submit"], button[type="submit"]').forEach(function (btn) {
                         btn.disabled = false;
                         btn.classList.remove('disabled');
                     });
+
+                    // The theme's double submit guard tracks state in jQuery's data store,
+                    // which the dataset attributes above do not reach
+                    if (window.jQuery) {
+                        window.jQuery(form).data('submitted', false);
+                    }
                 }
 
                 // Handle real-time validation errors from the card Element
@@ -111,16 +120,44 @@
                     }
                 });
 
+                // Bind natively for themes without jQuery, and through jQuery for callers that submit
+                // with jQuery's trigger, which calls form.submit() and so dispatches no submit event
+                function bindSubmit() {
+                    form.addEventListener('submit', submitCard);
+                    if (window.jQuery) {
+                        window.jQuery(form).on('submit', submitCard);
+                    }
+                }
+
+                function unbindSubmit() {
+                    form.removeEventListener('submit', submitCard);
+                    if (window.jQuery) {
+                        window.jQuery(form).off('submit', submitCard);
+                    }
+                }
+
+                // Resubmit with a real submit event, which reaches jQuery bound handlers and native
+                // listeners alike, so the order plugin's payment authorization runs whether or not the
+                // template ships jQuery. form.submit() would dispatch no event and reach neither.
+                // A dispatched event carries no default action, so submit once nothing cancels it
+                function resubmitForm() {
+                    var submit_event = new Event('submit', {bubbles: true, cancelable: true});
+
+                    if (form.dispatchEvent(submit_event)) {
+                        form.submit();
+                    }
+                }
+
                 // Handle form submission
-                form.addEventListener('submit', submitCard);
+                bindSubmit();
 
                 // If payment details changed setup a new card (rebind the submit handler)
                 ['payment_details', 'account', 'details'].forEach(function (id) {
                     var el = document.getElementById(id);
                     if (el) {
                         el.addEventListener('change', function () {
-                            form.removeEventListener('submit', submitCard);
-                            form.addEventListener('submit', submitCard);
+                            unbindSubmit();
+                            bindSubmit();
                         });
                     }
                 });
@@ -142,6 +179,14 @@
 
                 // Process submitted card
                 function submitCard(event) {
+                    // A real submit reaches both the native and the jQuery handler, only process once.
+                    // Cancel the event so a second submit while tokenization is in flight cannot
+                    // post the form before the reference_id is set
+                    if (submitting) {
+                        event.preventDefault();
+                        return;
+                    }
+
                     var paymentType = form.querySelector('select[name="payment_type"]');
 
                     // Disable the ACH form so its fields are not submitted
@@ -171,6 +216,7 @@
 
                     // Only process adding new payment accounts
                     if (ccDetails || (name && !accountVisible && !detailsVisible)) {
+                        submitting = true;
                         event.preventDefault();
                         event.stopImmediatePropagation();
 
@@ -223,9 +269,9 @@
                         referenceId.value = reference_id;
                     }
 
-                    form.removeEventListener('submit', submitCard);
+                    unbindSubmit();
                     enableFormSubmission();
-                    form.submit();
+                    resubmitForm();
                 }
             }
 
