@@ -25,6 +25,7 @@
                 var confirmed = false;
 
                 function enableFormSubmission() {
+                    confirmed = false;
                     form.dataset.submitted = 'false';
                     form.dataset.submitting = 'false';
                     form.querySelectorAll('input[type="submit"], button[type="submit"]').forEach(function (btn) {
@@ -86,6 +87,10 @@
                         unbindSubmit();
                         enableFormSubmission();
                         form.submit();
+                    }, function () {
+                        // Stripe.js failed outright (e.g. network error), so no confirmation was
+                        // attempted; re-enable the form so the payment can be retried
+                        enableFormSubmission();
                     });
                 }
             }
