@@ -88,6 +88,11 @@
                 var setup_secret = '<?php echo (isset($setup_intent->client_secret) ? $this->Html->safe($setup_intent->client_secret) : null);?>';
                 var billing_email = '<?php echo $this->Html->safe($billing_email ?? '');?>';
 
+                // Identify this gateway to Stripe on client-side requests
+                <?php if (!empty($app_info)) { ?>
+                stripe_ach.registerAppInfo(<?php echo json_encode($app_info);?>);
+                <?php } ?>
+
                 var collect_step = wrapper.querySelector('#ach-collect');
                 var mandate_step = wrapper.querySelector('#ach-mandate');
                 var complete_step = wrapper.querySelector('#ach-complete');

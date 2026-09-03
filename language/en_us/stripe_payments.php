@@ -6,6 +6,8 @@ $lang['StripePayments.!error.secret_key.empty'] = 'Please enter a Secret Key.';
 $lang['StripePayments.!error.secret_key.valid'] = 'Unable to connect to the Stripe API using the given Secret Key.';
 
 $lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify your bank account before you can use it to make a payment.';
+$lang['StripePayments.!error.ach.invalid_account'] = 'The bank account could not be found for this customer.';
+$lang['StripePayments.!error.ach.unverified'] = 'The bank account could not be verified. Please confirm the deposit amounts and try again.';
 $lang['StripePayments.!error.invalid_request_error'] = 'The payment gateway returned an error when processing the request.';
 $lang['StripePayments.!error.india_mandate_max_amount.format'] = 'Please enter a valid amount for the maximum recurring charge.';
 
