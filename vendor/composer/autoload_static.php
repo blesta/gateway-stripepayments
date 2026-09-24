@@ -7,30 +7,30 @@ namespace Composer\Autoload;
 class ComposerStaticInited80ec3b08694641b9e26df5e72f99c2
 {
     public static $prefixLengthsPsr4 = array (
-        'S' => 
+        'S' =>
         array (
             'Stripe\\' => 7,
         ),
-        'C' => 
+        'C' =>
         array (
             'Composer\\Installers\\' => 20,
         ),
-        'B' => 
+        'B' =>
         array (
             'Blesta\\Composer\\Installer\\' => 26,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
-        'Stripe\\' => 
+        'Stripe\\' =>
         array (
             0 => __DIR__ . '/..' . '/stripe/stripe-php/lib',
         ),
-        'Composer\\Installers\\' => 
+        'Composer\\Installers\\' =>
         array (
             0 => __DIR__ . '/..' . '/composer/installers/src/Composer/Installers',
         ),
-        'Blesta\\Composer\\Installer\\' => 
+        'Blesta\\Composer\\Installer\\' =>
         array (
             0 => __DIR__ . '/..' . '/blesta/composer-installer/src',
         ),

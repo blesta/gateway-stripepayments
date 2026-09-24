@@ -68,3 +68,13 @@ if ($legacy_stripe_installed) {
 <?php
 }
 ?>
+
+<?php
+if (($legacy_ach_accounts ?? 0) > 0) {
+?>
+    <h6 class="form-section-header mt-4"><?php $this->_('StripePayments.heading_legacy_ach_accounts');?></h6>
+    <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> <?php $this->_('StripePayments.warning_legacy_ach_accounts', false, $legacy_ach_accounts);?></div>
+    <p><?php $this->_('StripePayments.text_legacy_ach_accounts');?></p>
+<?php
+}
+?>
