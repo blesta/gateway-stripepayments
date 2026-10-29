@@ -60,19 +60,31 @@ configured with a restricted key (`rk_...`) cannot be converted in place.
 ### Connecting a different Stripe account
 
 To move a gateway that uses API keys to another Stripe account (or to connect one that uses
-a restricted key), click **Connect a Different Stripe Account**, choose live or test mode,
-and confirm. Whichever account you authorize is connected and the stored API keys are
-removed.
+a restricted key), click **Use a Different Account** and confirm. Whichever account you
+authorize is connected, in the same live/test mode as the stored keys, and the stored API
+keys are removed.
 
 Saved cards, bank accounts and Stripe customers belong to the Stripe account they were
 created in, so after connecting a different account, charging them and refunding earlier
 payments will fail and clients will need to add their payment methods again. The
 confirmation shows how many saved payment methods are affected. To return to the original
-account, disconnect and re-enter its API keys under **Use API keys instead**.
+account, use **Reconnect** and choose it; its saved payment methods work again.
 
-A test-mode connection offers a **Switch to Live** button. This disconnects the test
-authorization first and then sends you to Stripe to authorize in live mode; if you abandon
-the process partway, the gateway remains unconfigured until you connect again.
+### Reconnecting
+
+A connected gateway offers **Reconnect**, which sends you to Stripe to authorize again, in
+live mode by default (choose **Use test mode** in the dialog for a sandbox). Use it to move a
+test-mode gateway to live or to connect a different Stripe account. The current connection
+keeps working until the new authorization completes; if you abandon it or it's refused,
+nothing changes. Once the new connection is saved, the previous one is disconnected at
+Stripe, unless it was the same account in the same mode.
+
+If disconnecting the previous account fails, the gateway settings show a warning naming
+that account with a **Retry** button. Blesta also retries automatically on the next
+reconnect or disconnect. You can instead remove the connection from your Stripe dashboard.
+
+Saved payment methods only work with the Stripe account, and the mode, they were created
+in.
 
 ### Disconnecting and revoking
 

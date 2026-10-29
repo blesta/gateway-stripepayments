@@ -126,16 +126,28 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         // Arriving unconfigured while stored payment accounts exist means a disconnect or
         // revocation happened; reconnecting to the same account restores those references.
-        // With API keys, the count tells the admin what connecting a different account breaks
+        // Otherwise the count tells the admin what connecting a different account breaks
         $stored_account_count = 0;
-        if (in_array($state, ['unconfigured', 'api_keys']) && ($gateway_id = $this->getGatewayId())) {
+        $pending_revocations = [];
+        if (($gateway_id = $this->getGatewayId())) {
             $stored_account_count = $this->countStoredAccounts($gateway_id);
+
+            // Previously connected accounts a reconnect could not disconnect at Stripe
+            $pending_revocations = $this->getExtensionOauth()
+                ->getPendingRevocations('gateway', $gateway_id, $this->getOauthProvider());
         }
+        $this->view->set('pending_revocations', $pending_revocations);
 
         $this->view->set('state', $state);
         $this->view->set('enrollment', $enrollment);
         $this->view->set('convert_mode', $convert_mode);
-        $this->view->set('replace_mode', ($convert_mode ?? 'live'));
+        // Connecting a different account stays in the stored key's mode; a restricted key's
+        // prefix carries the mode too, and only an unrecognized key falls back to live
+        $replace_mode = $convert_mode;
+        if ($replace_mode === null && $state == 'api_keys') {
+            $replace_mode = (str_starts_with($meta['secret_key'], 'rk_test_') ? 'test' : 'live');
+        }
+        $this->view->set('replace_mode', ($replace_mode ?? 'live'));
         $this->view->set('has_stored_accounts', $stored_account_count > 0);
         $this->view->set('stored_account_count', $stored_account_count);
         $this->view->set('gateway_id', $this->getGatewayId());

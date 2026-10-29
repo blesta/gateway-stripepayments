@@ -9,8 +9,31 @@ $mode = ($enrollment['mode'] ?? null);
 <?php
 if ($pending) {
 ?>
-<div class="alert alert-info">
-    <i class="bi bi-hourglass-split me-1"></i> <?php $this->_('StripePayments.oauth.pending'); ?>
+<div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>
+        <i class="bi bi-hourglass-split me-1"></i>
+        <?php $this->_($state == 'connected' ? 'StripePayments.oauth.pending_connected' : 'StripePayments.oauth.pending'); ?>
+    </span>
+    <button type="submit" form="stripe_oauth_cancel_form" class="btn btn-outline-secondary btn-sm">
+        <?php $this->_('StripePayments.oauth.pending_cancel'); ?>
+    </button>
+</div>
+<?php
+}
+
+if (!empty($pending_revocations)) {
+    $revoke_accounts = implode(', ', array_map(function ($revocation) {
+        return $revocation->account_id;
+    }, $pending_revocations));
+?>
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        <?php $this->_('StripePayments.oauth.revocation_pending', false, $this->Html->safe($revoke_accounts)); ?>
+    </span>
+    <button type="submit" form="stripe_oauth_retry_form" class="btn btn-outline-secondary btn-sm">
+        <?php $this->_('StripePayments.oauth.revocation_retry'); ?>
+    </button>
 </div>
 <?php
 }
@@ -35,15 +58,9 @@ if ($state == 'connected') {
             ?>
         </div>
         <div class="d-flex gap-2">
-            <?php
-            if ($mode != 'live') {
-            ?>
-            <button type="button" class="btn btn-primary btn-sm" data-stripe-modal="#stripe_oauth_switch_modal">
-                <?php $this->_('StripePayments.oauth.switch_to_live'); ?>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-stripe-modal="#stripe_oauth_reconnect_modal">
+                <?php $this->_('StripePayments.oauth.reconnect'); ?>
             </button>
-            <?php
-            }
-            ?>
             <button type="button" class="btn btn-outline-danger btn-sm" data-stripe-modal="#stripe_oauth_disconnect_modal">
                 <?php $this->_('StripePayments.oauth.disconnect'); ?>
             </button>
@@ -52,40 +69,30 @@ if ($state == 'connected') {
 </div>
 <?php
 } elseif ($state == 'api_keys') {
-    if (!empty($convert_mode)) {
 ?>
-<div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span><i class="bi bi-info-circle me-1"></i> <?php $this->_('StripePayments.oauth.convert_text'); ?></span>
-    <?php
-    if ($convert_mode == 'live') {
-    ?>
-    <button type="submit" form="stripe_oauth_convert_form" class="btn btn-primary btn-sm">
-        <?php $this->_('StripePayments.oauth.convert'); ?>
-    </button>
-    <?php
-    } else {
-    ?>
-    <button type="button" class="btn btn-primary btn-sm" data-stripe-modal="#stripe_oauth_convert_modal">
-        <?php $this->_('StripePayments.oauth.convert'); ?>
-    </button>
-    <?php
-    }
-    ?>
-</div>
-<?php
-    } else {
-?>
-<div class="alert alert-info">
-    <i class="bi bi-info-circle me-1"></i> <?php $this->_('StripePayments.oauth.convert_restricted'); ?>
-</div>
-<?php
-    }
-?>
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <span class="form-text mt-0"><?php $this->_('StripePayments.oauth.replace_text'); ?></span>
-    <button type="button" class="btn btn-outline-secondary btn-sm" data-stripe-modal="#stripe_oauth_replace_modal">
-        <?php $this->_('StripePayments.oauth.replace'); ?>
-    </button>
+<div class="card mb-3">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
+        <div>
+            <div class="fw-semibold"><i class="bi bi-key me-1"></i> <?php $this->_('StripePayments.oauth.api_keys'); ?></div>
+            <div class="form-text mt-0">
+                <?php $this->_(!empty($convert_mode) ? 'StripePayments.oauth.convert_text' : 'StripePayments.oauth.convert_restricted'); ?>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-stripe-modal="#stripe_oauth_replace_modal">
+                <?php $this->_('StripePayments.oauth.replace'); ?>
+            </button>
+            <?php
+            if (!empty($convert_mode)) {
+            ?>
+            <button type="submit" form="stripe_oauth_convert_form" class="btn btn-primary btn-sm">
+                <?php $this->_('StripePayments.oauth.convert'); ?>
+            </button>
+            <?php
+            }
+            ?>
+        </div>
+    </div>
 </div>
 <div class="mb-3">
     <label class="form-label">
@@ -236,107 +243,111 @@ if (!empty($gateway_id)) {
         $this->Form->fieldHidden('mode', $convert_mode);
         $this->Form->fieldHidden('extras[intent]', 'convert');
         $this->Form->end();
-
-        if ($convert_mode == 'test') {
-    ?>
-    <div class="modal fade" id="stripe_oauth_convert_modal" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><?php $this->_('StripePayments.oauth.modal_convert_test_title'); ?></h5>
-                </div>
-                <div class="modal-body"><?php $this->_('StripePayments.oauth.modal_convert_test_text'); ?></div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-stripe-modal-dismiss>
-                        <?php $this->_('StripePayments.oauth.modal_cancel'); ?>
-                    </button>
-                    <button type="submit" form="stripe_oauth_convert_form" class="btn btn-primary">
-                        <?php $this->_('StripePayments.oauth.convert'); ?>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php
-        }
     }
 
+    // Connecting another account, from API keys or from an existing connection, shares one
+    // confirmation dialog. Each submit button joins its form through the "form" attribute
+    $account_modal = null;
     if ($state == 'api_keys') {
-        // The mode radios and the submit button live in the modal and join this form through
-        // their "form" attribute
         $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_replace_form']);
         $this->Form->fieldHidden('gateway_id', $gateway_id);
         $this->Form->fieldHidden('op', 'connect');
+        $this->Form->fieldHidden('mode', $replace_mode);
         $this->Form->fieldHidden('extras[intent]', 'replace');
         $this->Form->end();
+
+        $account_modal = [
+            'id' => 'stripe_oauth_replace_modal',
+            'form' => 'stripe_oauth_replace_form',
+            'test_form' => null,
+            'lang' => 'replace',
+            'submit_class' => 'btn-danger'
+        ];
+    } elseif ($state == 'connected') {
+        // Reconnecting goes live by default; test mode is the small opt-in, as on first connect
+        foreach (['live', 'test'] as $reconnect_mode) {
+            $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_reconnect_' . $reconnect_mode . '_form']);
+            $this->Form->fieldHidden('gateway_id', $gateway_id);
+            $this->Form->fieldHidden('op', 'connect');
+            $this->Form->fieldHidden('mode', $reconnect_mode);
+            $this->Form->end();
+        }
+
+        $account_modal = [
+            'id' => 'stripe_oauth_reconnect_modal',
+            'form' => 'stripe_oauth_reconnect_live_form',
+            'test_form' => 'stripe_oauth_reconnect_test_form',
+            'lang' => 'reconnect',
+            // The current connection stays until the new one succeeds, so nothing is at risk
+            'submit_class' => 'btn-primary'
+        ];
+    }
+
+    if ($account_modal) {
     ?>
-    <div class="modal fade" id="stripe_oauth_replace_modal" tabindex="-1" role="dialog">
+    <div class="modal fade" id="<?php echo $account_modal['id']; ?>" tabindex="-1" role="dialog">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><?php $this->_('StripePayments.oauth.modal_replace_title'); ?></h5>
+                    <h5 class="modal-title"><?php $this->_('StripePayments.oauth.modal_' . $account_modal['lang'] . '_title'); ?></h5>
                 </div>
                 <div class="modal-body">
-                    <p><?php $this->_('StripePayments.oauth.modal_replace_text'); ?></p>
+                    <p class="<?php echo (!empty($stored_account_count) ? 'mb-3' : 'mb-0'); ?>">
+                        <?php $this->_('StripePayments.oauth.modal_' . $account_modal['lang'] . '_text'); ?>
+                    </p>
                     <?php
                     if (!empty($stored_account_count)) {
                     ?>
-                    <div class="alert alert-warning">
+                    <div class="alert alert-warning py-2 mb-0">
                         <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                        <?php $this->_('StripePayments.oauth.modal_replace_count', false, (int) $stored_account_count); ?>
+                        <?php
+                        $this->_(
+                            'StripePayments.oauth.modal_' . $account_modal['lang'] . '_count'
+                                . ($stored_account_count == 1 ? '_one' : ''),
+                            false,
+                            (int) $stored_account_count
+                        );
+                        ?>
                     </div>
                     <?php
                     }
                     ?>
-                    <div class="mb-3">
-                        <label class="form-label"><?php $this->_('StripePayments.oauth.modal_replace_mode'); ?></label>
-                        <?php
-                        foreach (['live', 'test'] as $replace_option) {
-                        ?>
-                        <div class="form-check">
-                            <?php
-                            $this->Form->fieldRadio(
-                                'mode',
-                                $replace_option,
-                                ($replace_mode == $replace_option),
-                                [
-                                    'id' => 'stripe_oauth_replace_mode_' . $replace_option,
-                                    'class' => 'form-check-input',
-                                    'form' => 'stripe_oauth_replace_form'
-                                ]
-                            );
-                            $this->Form->label(
-                                $this->_('StripePayments.oauth.mode_' . $replace_option, true),
-                                'stripe_oauth_replace_mode_' . $replace_option,
-                                ['class' => 'form-check-label']
-                            );
-                            ?>
-                        </div>
-                        <?php
-                        }
-                        ?>
-                    </div>
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input" id="stripe_oauth_replace_confirm"
-                               data-stripe-confirm="#stripe_oauth_replace_submit" />
-                        <label class="form-check-label" for="stripe_oauth_replace_confirm">
-                            <?php $this->_('StripePayments.oauth.modal_replace_confirm'); ?>
-                        </label>
-                    </div>
                 </div>
                 <div class="modal-footer">
+                    <?php
+                    if ($account_modal['test_form']) {
+                    ?>
+                    <button type="submit" form="<?php echo $account_modal['test_form']; ?>" class="btn btn-link btn-sm me-auto">
+                        <?php $this->_('StripePayments.oauth.modal_reconnect_test'); ?>
+                    </button>
+                    <?php
+                    }
+                    ?>
                     <button type="button" class="btn btn-secondary" data-stripe-modal-dismiss>
                         <?php $this->_('StripePayments.oauth.modal_cancel'); ?>
                     </button>
-                    <button type="submit" form="stripe_oauth_replace_form" class="btn btn-danger"
-                            id="stripe_oauth_replace_submit" disabled>
-                        <?php $this->_('StripePayments.oauth.modal_replace_submit'); ?>
+                    <button type="submit" form="<?php echo $account_modal['form']; ?>" class="btn <?php echo $account_modal['submit_class']; ?>">
+                        <?php $this->_('StripePayments.oauth.modal_' . $account_modal['lang'] . '_submit'); ?>
                     </button>
                 </div>
             </div>
         </div>
     </div>
     <?php
+    }
+
+    if ($pending) {
+        $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_cancel_form']);
+        $this->Form->fieldHidden('gateway_id', $gateway_id);
+        $this->Form->fieldHidden('op', 'cancel');
+        $this->Form->end();
+    }
+
+    if (!empty($pending_revocations)) {
+        $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_retry_form']);
+        $this->Form->fieldHidden('gateway_id', $gateway_id);
+        $this->Form->fieldHidden('op', 'retry_revocations');
+        $this->Form->end();
     }
 
     if ($state == 'connected') {
@@ -364,33 +375,6 @@ if (!empty($gateway_id)) {
         </div>
     </div>
     <?php
-        if ($mode != 'live') {
-            $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_switch_form']);
-            $this->Form->fieldHidden('gateway_id', $gateway_id);
-            $this->Form->fieldHidden('op', 'switch');
-            $this->Form->fieldHidden('mode', 'live');
-            $this->Form->end();
-    ?>
-    <div class="modal fade" id="stripe_oauth_switch_modal" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><?php $this->_('StripePayments.oauth.modal_switch_title'); ?></h5>
-                </div>
-                <div class="modal-body"><?php $this->_('StripePayments.oauth.modal_switch_text'); ?></div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-stripe-modal-dismiss>
-                        <?php $this->_('StripePayments.oauth.modal_cancel'); ?>
-                    </button>
-                    <button type="submit" form="stripe_oauth_switch_form" class="btn btn-primary">
-                        <?php $this->_('StripePayments.oauth.switch_to_live'); ?>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php
-        }
     }
     ?>
 </template>
@@ -410,26 +394,7 @@ if (!empty($gateway_id)) {
             document.querySelectorAll('[data-stripe-oauth-backdrop]').forEach(function (el) {
                 el.remove();
             });
-
-            // A confirmation applies to one opening of the modal only
-            modal.querySelectorAll('[data-stripe-confirm]').forEach(function (checkbox) {
-                checkbox.checked = false;
-                setConfirmed(checkbox);
-            });
         }
-
-        function setConfirmed(checkbox) {
-            var target = document.querySelector(checkbox.getAttribute('data-stripe-confirm'));
-            if (target) {
-                target.disabled = !checkbox.checked;
-            }
-        }
-
-        document.addEventListener('change', function (event) {
-            if (event.target.matches('[data-stripe-confirm]')) {
-                setConfirmed(event.target);
-            }
-        });
 
         document.addEventListener('click', function (event) {
             var opener = event.target.closest('[data-stripe-modal]');
