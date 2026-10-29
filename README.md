@@ -53,8 +53,22 @@ your existing secret key points at (and in the same live/test mode); otherwise i
 refused and nothing changes. On success the stored API keys are removed and your clients'
 saved payment methods continue to work unchanged.
 
-Gateways configured with a restricted key (`rk_...`) cannot be converted in place —
-disconnect and set up with **Connect with Stripe** instead.
+**Switch to Stripe Connect** never changes the Stripe account: authorizing a different
+account there is refused and the gateway keeps running on its API keys. Gateways
+configured with a restricted key (`rk_...`) cannot be converted in place.
+
+### Connecting a different Stripe account
+
+To move a gateway that uses API keys to another Stripe account (or to connect one that uses
+a restricted key), click **Connect a Different Stripe Account**, choose live or test mode,
+and confirm. Whichever account you authorize is connected and the stored API keys are
+removed.
+
+Saved cards, bank accounts and Stripe customers belong to the Stripe account they were
+created in, so after connecting a different account, charging them and refunding earlier
+payments will fail and clients will need to add their payment methods again. The
+confirmation shows how many saved payment methods are affected. To return to the original
+account, disconnect and re-enter its API keys under **Use API keys instead**.
 
 A test-mode connection offers a **Switch to Live** button. This disconnects the test
 authorization first and then sends you to Stripe to authorize in live mode; if you abandon

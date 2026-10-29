@@ -125,27 +125,19 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         // Arriving unconfigured while stored payment accounts exist means a disconnect or
-        // revocation happened; reconnecting to the same account restores those references
-        $has_stored_accounts = false;
-        if ($state == 'unconfigured' && ($gateway_id = $this->getGatewayId())) {
-            foreach (['accounts_cc', 'accounts_ach'] as $table) {
-                $record = new Record;
-                $has_stored_accounts = $record->select()->
-                    from($table)->
-                    where('gateway_id', '=', $gateway_id)->
-                    where('status', '=', 'active')->
-                    numResults() > 0;
-
-                if ($has_stored_accounts) {
-                    break;
-                }
-            }
+        // revocation happened; reconnecting to the same account restores those references.
+        // With API keys, the count tells the admin what connecting a different account breaks
+        $stored_account_count = 0;
+        if (in_array($state, ['unconfigured', 'api_keys']) && ($gateway_id = $this->getGatewayId())) {
+            $stored_account_count = $this->countStoredAccounts($gateway_id);
         }
 
         $this->view->set('state', $state);
         $this->view->set('enrollment', $enrollment);
         $this->view->set('convert_mode', $convert_mode);
-        $this->view->set('has_stored_accounts', $has_stored_accounts);
+        $this->view->set('replace_mode', ($convert_mode ?? 'live'));
+        $this->view->set('has_stored_accounts', $stored_account_count > 0);
+        $this->view->set('stored_account_count', $stored_account_count);
         $this->view->set('gateway_id', $this->getGatewayId());
         $this->view->set(
             'oauth_action_url',
@@ -313,6 +305,27 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
     /**
      * {@inheritdoc}
+     *
+     * The only extra this gateway uses is "intent": "convert" moves the gateway from its API
+     * keys to Stripe Connect on the same account, and "replace" moves it to any account
+     */
+    public function validateOauthExtras(array $extras): bool
+    {
+        if ($extras === []
+            || (count($extras) === 1 && in_array(($extras['intent'] ?? null), ['convert', 'replace'], true))
+        ) {
+            return true;
+        }
+
+        $this->Input->setErrors(
+            ['extras' => ['invalid' => Language::_('StripePayments.!error.oauth.extras_invalid', true)]]
+        );
+
+        return false;
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public function validateOauthGrant(array $grant): bool
     {
@@ -321,15 +334,24 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             return false;
         }
 
-        // Only a convert carries extra acceptance requirements; a fresh connect has no
-        // stored account to compare against
-        if (($grant['extras']['intent'] ?? null) !== 'convert') {
+        $intent = ($grant['extras']['intent'] ?? null);
+        $secret_key = ($this->meta['secret_key'] ?? '');
+
+        // Only an explicit, confirmed replace may move the gateway to another account; the
+        // admin was told its stored payment methods will stop working
+        if ($intent === 'replace') {
             return true;
         }
 
-        $secret_key = ($this->meta['secret_key'] ?? '');
         if ($secret_key === '') {
-            return false;
+            // A convert needs a stored account to compare against; a fresh connect does not
+            return ($intent === 'convert' ? $this->refuseOauthGrant('convert_no_key') : true);
+        }
+
+        // A plain connect while keys are stored comes from a stale page, not a decision to
+        // replace the account the keys point at
+        if ($intent !== 'convert') {
+            return $this->refuseOauthGrant('keys_stored');
         }
 
         // The grant must be for the same mode the stored key operates in
@@ -338,18 +360,41 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         } elseif (str_starts_with($secret_key, 'sk_test_')) {
             $expected_mode = 'test';
         } else {
-            return false;
+            return $this->refuseOauthGrant('key_unrecognized');
         }
 
         if (($grant['mode'] ?? null) !== $expected_mode) {
-            return false;
+            return $this->refuseOauthGrant('mode_mismatch');
         }
 
         // The grant must land on the account the stored key already points at, or every
         // stored customer/card reference would silently stop resolving
         $account_id = $this->getStripeAccountId($secret_key);
 
-        return $account_id !== null && $account_id === $grant['account_id'];
+        if ($account_id === null) {
+            return $this->refuseOauthGrant('account_check_failed');
+        }
+
+        if ($account_id !== $grant['account_id']) {
+            return $this->refuseOauthGrant('account_mismatch');
+        }
+
+        return true;
+    }
+
+    /**
+     * Records why a grant was refused, for core to show in place of its generic message
+     *
+     * @param string $reason The reason, matching a StripePayments.!error.oauth language key
+     * @return bool Always false
+     */
+    private function refuseOauthGrant($reason)
+    {
+        $this->Input->setErrors(
+            ['oauth' => [$reason => Language::_('StripePayments.!error.oauth.' . $reason, true)]]
+        );
+
+        return false;
     }
 
     /**
@@ -477,6 +522,28 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         return ($this->meta['publishable_key'] ?? null);
+    }
+
+    /**
+     * Returns the number of active payment accounts stored against this gateway, whose
+     * references only resolve in the Stripe account they were created under
+     *
+     * @param int $gateway_id The ID of the gateway
+     * @return int The number of active credit card and ACH accounts
+     */
+    protected function countStoredAccounts($gateway_id)
+    {
+        $count = 0;
+        foreach (['accounts_cc', 'accounts_ach'] as $table) {
+            $record = new Record;
+            $count += $record->select()->
+                from($table)->
+                where('gateway_id', '=', $gateway_id)->
+                where('status', '=', 'active')->
+                numResults();
+        }
+
+        return $count;
     }
 
     /**

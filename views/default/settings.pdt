@@ -81,6 +81,12 @@ if ($state == 'connected') {
 <?php
     }
 ?>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <span class="form-text mt-0"><?php $this->_('StripePayments.oauth.replace_text'); ?></span>
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-stripe-modal="#stripe_oauth_replace_modal">
+        <?php $this->_('StripePayments.oauth.replace'); ?>
+    </button>
+</div>
 <div class="mb-3">
     <label class="form-label">
         <?php $this->_('StripePayments.publishable_key'); ?>
@@ -228,7 +234,7 @@ if (!empty($gateway_id)) {
         $this->Form->fieldHidden('gateway_id', $gateway_id);
         $this->Form->fieldHidden('op', 'connect');
         $this->Form->fieldHidden('mode', $convert_mode);
-        $this->Form->fieldHidden('intent', 'convert');
+        $this->Form->fieldHidden('extras[intent]', 'convert');
         $this->Form->end();
 
         if ($convert_mode == 'test') {
@@ -253,6 +259,84 @@ if (!empty($gateway_id)) {
     </div>
     <?php
         }
+    }
+
+    if ($state == 'api_keys') {
+        // The mode radios and the submit button live in the modal and join this form through
+        // their "form" attribute
+        $this->Form->create($oauth_action_url, ['id' => 'stripe_oauth_replace_form']);
+        $this->Form->fieldHidden('gateway_id', $gateway_id);
+        $this->Form->fieldHidden('op', 'connect');
+        $this->Form->fieldHidden('extras[intent]', 'replace');
+        $this->Form->end();
+    ?>
+    <div class="modal fade" id="stripe_oauth_replace_modal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><?php $this->_('StripePayments.oauth.modal_replace_title'); ?></h5>
+                </div>
+                <div class="modal-body">
+                    <p><?php $this->_('StripePayments.oauth.modal_replace_text'); ?></p>
+                    <?php
+                    if (!empty($stored_account_count)) {
+                    ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <?php $this->_('StripePayments.oauth.modal_replace_count', false, (int) $stored_account_count); ?>
+                    </div>
+                    <?php
+                    }
+                    ?>
+                    <div class="mb-3">
+                        <label class="form-label"><?php $this->_('StripePayments.oauth.modal_replace_mode'); ?></label>
+                        <?php
+                        foreach (['live', 'test'] as $replace_option) {
+                        ?>
+                        <div class="form-check">
+                            <?php
+                            $this->Form->fieldRadio(
+                                'mode',
+                                $replace_option,
+                                ($replace_mode == $replace_option),
+                                [
+                                    'id' => 'stripe_oauth_replace_mode_' . $replace_option,
+                                    'class' => 'form-check-input',
+                                    'form' => 'stripe_oauth_replace_form'
+                                ]
+                            );
+                            $this->Form->label(
+                                $this->_('StripePayments.oauth.mode_' . $replace_option, true),
+                                'stripe_oauth_replace_mode_' . $replace_option,
+                                ['class' => 'form-check-label']
+                            );
+                            ?>
+                        </div>
+                        <?php
+                        }
+                        ?>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="stripe_oauth_replace_confirm"
+                               data-stripe-confirm="#stripe_oauth_replace_submit" />
+                        <label class="form-check-label" for="stripe_oauth_replace_confirm">
+                            <?php $this->_('StripePayments.oauth.modal_replace_confirm'); ?>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-stripe-modal-dismiss>
+                        <?php $this->_('StripePayments.oauth.modal_cancel'); ?>
+                    </button>
+                    <button type="submit" form="stripe_oauth_replace_form" class="btn btn-danger"
+                            id="stripe_oauth_replace_submit" disabled>
+                        <?php $this->_('StripePayments.oauth.modal_replace_submit'); ?>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php
     }
 
     if ($state == 'connected') {
@@ -326,7 +410,26 @@ if (!empty($gateway_id)) {
             document.querySelectorAll('[data-stripe-oauth-backdrop]').forEach(function (el) {
                 el.remove();
             });
+
+            // A confirmation applies to one opening of the modal only
+            modal.querySelectorAll('[data-stripe-confirm]').forEach(function (checkbox) {
+                checkbox.checked = false;
+                setConfirmed(checkbox);
+            });
         }
+
+        function setConfirmed(checkbox) {
+            var target = document.querySelector(checkbox.getAttribute('data-stripe-confirm'));
+            if (target) {
+                target.disabled = !checkbox.checked;
+            }
+        }
+
+        document.addEventListener('change', function (event) {
+            if (event.target.matches('[data-stripe-confirm]')) {
+                setConfirmed(event.target);
+            }
+        });
 
         document.addEventListener('click', function (event) {
             var opener = event.target.closest('[data-stripe-modal]');

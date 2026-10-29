@@ -93,6 +93,20 @@ class StripePaymentsOauthTest extends TestCase
         );
     }
 
+    /**
+     * Asserts a grant was refused with the given reason recorded for core to show
+     *
+     * @param StripePayments $gateway The gateway
+     * @param string $reason The expected StripePayments.!error.oauth reason
+     */
+    private function assertRefusedWith($gateway, $reason)
+    {
+        $this->assertSame(
+            ['oauth' => [$reason => 'StripePayments.!error.oauth.' . $reason]],
+            $gateway->errors()
+        );
+    }
+
     public function testValidateOauthGrantRefusesConvertAccountMismatch()
     {
         $gateway = $this->gateway(['getStripeAccountId']);
@@ -102,6 +116,7 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertFalse(
             $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'convert']]))
         );
+        $this->assertRefusedWith($gateway, 'account_mismatch');
     }
 
     public function testValidateOauthGrantRefusesConvertModeMismatch()
@@ -114,6 +129,7 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertFalse(
             $gateway->validateOauthGrant($this->freshGrant(['mode' => 'live', 'extras' => ['intent' => 'convert']]))
         );
+        $this->assertRefusedWith($gateway, 'mode_mismatch');
     }
 
     public function testValidateOauthGrantRefusesConvertWhenAccountCheckErrors()
@@ -126,6 +142,7 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertFalse(
             $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'convert']]))
         );
+        $this->assertRefusedWith($gateway, 'account_check_failed');
     }
 
     public function testValidateOauthGrantRefusesConvertWithUnrecognizedKeyPrefix()
@@ -137,6 +154,7 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertFalse(
             $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'convert']]))
         );
+        $this->assertRefusedWith($gateway, 'key_unrecognized');
     }
 
     public function testValidateOauthGrantRefusesConvertWithoutStoredKey()
@@ -148,6 +166,128 @@ class StripePaymentsOauthTest extends TestCase
         $this->assertFalse(
             $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'convert']]))
         );
+        $this->assertRefusedWith($gateway, 'convert_no_key');
+    }
+
+    public function testValidateOauthGrantRefusesPlainConnectWhenKeysStored()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta(['secret_key' => 'sk_live_stored', 'publishable_key' => 'pk_live_stored']);
+        // A plain connect from a stale page is refused even for the matching account; only an
+        // explicit convert or replace may act on a gateway with keys
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertFalse($gateway->validateOauthGrant($this->freshGrant()));
+        $this->assertRefusedWith($gateway, 'keys_stored');
+    }
+
+    public function testValidateOauthGrantTreatsUnknownIntentAsPlainConnect()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta(['secret_key' => 'sk_live_stored']);
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertFalse(
+            $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'bogus']]))
+        );
+        $this->assertRefusedWith($gateway, 'keys_stored');
+
+        // Without stored keys an unknown intent is just a fresh connect
+        $gateway->setMeta([]);
+        $this->assertTrue(
+            $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'bogus']]))
+        );
+    }
+
+    public function testValidateOauthGrantAcceptsReplaceOfADifferentAccount()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta(['secret_key' => 'sk_live_stored', 'publishable_key' => 'pk_live_stored']);
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertTrue(
+            $gateway->validateOauthGrant(
+                $this->freshGrant(['account_id' => 'acct_other', 'extras' => ['intent' => 'replace']])
+            )
+        );
+    }
+
+    public function testValidateOauthGrantAcceptsReplaceInADifferentMode()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta(['secret_key' => 'sk_test_stored']);
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertTrue(
+            $gateway->validateOauthGrant($this->freshGrant(['mode' => 'live', 'extras' => ['intent' => 'replace']]))
+        );
+    }
+
+    public function testValidateOauthGrantAcceptsReplaceOfARestrictedKey()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta(['secret_key' => 'rk_live_restricted']);
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertTrue(
+            $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'replace']]))
+        );
+    }
+
+    public function testValidateOauthGrantAcceptsReplaceWithoutStoredKey()
+    {
+        $gateway = $this->gateway(['getStripeAccountId']);
+        $gateway->setMeta([]);
+        $gateway->expects($this->never())->method('getStripeAccountId');
+
+        $this->assertTrue(
+            $gateway->validateOauthGrant($this->freshGrant(['extras' => ['intent' => 'replace']]))
+        );
+    }
+
+    /**
+     * @dataProvider acceptedExtrasProvider
+     */
+    public function testValidateOauthExtrasAccepts(array $extras)
+    {
+        $gateway = new StripePayments();
+
+        $this->assertTrue($gateway->validateOauthExtras($extras));
+        $this->assertFalse($gateway->errors());
+    }
+
+    public function acceptedExtrasProvider()
+    {
+        return [
+            'none' => [[]],
+            'convert' => [['intent' => 'convert']],
+            'replace' => [['intent' => 'replace']]
+        ];
+    }
+
+    /**
+     * @dataProvider refusedExtrasProvider
+     */
+    public function testValidateOauthExtrasRefuses(array $extras)
+    {
+        $gateway = new StripePayments();
+
+        $this->assertFalse($gateway->validateOauthExtras($extras));
+        $this->assertSame(
+            ['extras' => ['invalid' => 'StripePayments.!error.oauth.extras_invalid']],
+            $gateway->errors()
+        );
+    }
+
+    public function refusedExtrasProvider()
+    {
+        return [
+            'unknown intent' => [['intent' => 'bogus']],
+            'empty intent' => [['intent' => '']],
+            'non-string intent' => [['intent' => ['convert']]],
+            'extra key alongside intent' => [['intent' => 'convert', 'foo' => 'bar']],
+            'other key' => [['foo' => 'bar']]
+        ];
     }
 
     public function testGetPublishableKeyPrefersGrantWhenConnected()

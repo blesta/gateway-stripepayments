@@ -13,6 +13,7 @@ namespace Blesta\Core\Util\Oauth {
         interface CentralizedOauthExtension
         {
             public function getOauthProvider(): string;
+            public function validateOauthExtras(array $extras): bool;
             public function validateOauthGrant(array $grant): bool;
             public function onOauthGrantChanged(?array $grant): void;
             public function getOauthSettingsUrl(): ?string;
@@ -146,6 +147,11 @@ namespace {
             public function getName()
             {
                 return 'Stripe Payments';
+            }
+
+            public function errors()
+            {
+                return $this->Input->errors();
             }
 
             public function getVersion()

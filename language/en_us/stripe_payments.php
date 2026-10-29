@@ -9,6 +9,14 @@ $lang['StripePayments.!error.bank_account_unverified'] = 'You need to verify you
 $lang['StripePayments.!error.invalid_request_error'] = 'The payment gateway returned an error when processing the request.';
 $lang['StripePayments.!error.india_mandate_max_amount.format'] = 'Please enter a valid amount for the maximum recurring charge.';
 
+$lang['StripePayments.!error.oauth.extras_invalid'] = 'The Stripe Connect request was not recognized. Please reload the page and try again.';
+$lang['StripePayments.!error.oauth.keys_stored'] = 'This gateway is configured with API keys, so nothing was changed. Use Switch to Stripe Connect to connect the same Stripe account, or Connect a Different Stripe Account to replace it.';
+$lang['StripePayments.!error.oauth.convert_no_key'] = 'This gateway no longer has API keys to switch from, so nothing was changed. Use Connect with Stripe instead.';
+$lang['StripePayments.!error.oauth.key_unrecognized'] = 'This gateway\'s stored key cannot be switched to Stripe Connect in place, so nothing was changed. Use Connect a Different Stripe Account instead.';
+$lang['StripePayments.!error.oauth.mode_mismatch'] = 'The Stripe authorization was not in the same mode (live or test) as this gateway\'s API keys, so nothing was changed.';
+$lang['StripePayments.!error.oauth.account_check_failed'] = 'Unable to confirm which Stripe account this gateway\'s API keys belong to, so nothing was changed. Please try again.';
+$lang['StripePayments.!error.oauth.account_mismatch'] = 'The Stripe account you authorized is not the account this gateway\'s API keys belong to, so nothing was changed. To move this gateway to a different Stripe account, use Connect a Different Stripe Account.';
+
 $lang['StripePayments.name'] = 'Stripe Payments';
 $lang['StripePayments.description'] = 'Uses Stripe Elements and the Payment Request API to automatically handle 3D Secure and SCA to send credit cards directly through Stripe';
 
@@ -80,3 +88,13 @@ $lang['StripePayments.oauth.modal_disconnect_title'] = 'Disconnect from Stripe';
 $lang['StripePayments.oauth.modal_disconnect_text'] = 'This revokes Blesta\'s access to your Stripe account and leaves the gateway unconfigured, so no further payments can be processed until it is set up again. Your clients\' saved payment methods remain in your Stripe account and will work again if you reconnect to the same account.';
 $lang['StripePayments.oauth.modal_convert_test_title'] = 'Convert in Test Mode';
 $lang['StripePayments.oauth.modal_convert_test_text'] = 'The stored secret key is a test-mode key, so this gateway will connect to Stripe in TEST mode. Payments will not be processed for real. Proceed?';
+$lang['StripePayments.oauth.replace'] = 'Connect a Different Stripe Account';
+$lang['StripePayments.oauth.replace_text'] = 'Moving this gateway to another Stripe account? Connect it here instead of switching.';
+$lang['StripePayments.oauth.modal_replace_title'] = 'Connect a Different Stripe Account';
+$lang['StripePayments.oauth.modal_replace_text'] = 'This connects the gateway to whichever Stripe account you authorize and removes the stored API keys. Saved cards, bank accounts and Stripe customers belong to the current Stripe account, so charging them and refunding earlier payments will fail, and clients will need to add their payment methods again. To keep them, use Switch to Stripe Connect with the same account instead.';
+$lang['StripePayments.oauth.modal_replace_count'] = '%1$s saved payment method(s) will stop working.'; // Where %1$s is the number of saved payment methods
+$lang['StripePayments.oauth.modal_replace_mode'] = 'Mode';
+$lang['StripePayments.oauth.modal_replace_confirm'] = 'I understand that saved payment methods will stop working.';
+$lang['StripePayments.oauth.modal_replace_submit'] = 'Connect a Different Account';
+$lang['StripePayments.oauth.mode_live'] = 'Live';
+$lang['StripePayments.oauth.mode_test'] = 'Test';
