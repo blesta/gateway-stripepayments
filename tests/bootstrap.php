@@ -193,7 +193,7 @@ namespace {
         }
     }
 
-    foreach (['MerchantAch', 'MerchantAchOffsite', 'MerchantAchVerification', 'MerchantAchForm',
+    foreach (['MerchantAch', 'MerchantAchOffsite', 'MerchantAchVerification', 'MerchantAchStatus', 'MerchantAchForm',
         'MerchantCc', 'MerchantCcOffsite', 'MerchantCcForm'] as $merchant_interface) {
         if (!interface_exists($merchant_interface)) {
             eval('interface ' . $merchant_interface . ' {}');
