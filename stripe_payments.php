@@ -1167,35 +1167,45 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             ];
         }
 
-        $captured_payment_intent = $this->handleApiRequest(
-            function ($payment_intent) {
-                return $payment_intent->capture();
-            },
-            [$payment_intent],
-            $this->base_url . 'payment_intent - capture'
-        );
+        if ($payment_intent->status === 'succeeded') {
+            // Already captured, most likely by an earlier request that reached the gateway
+            // while this duplicate was still in flight (e.g. a resubmitted confirmation).
+            // Stripe would reject a second capture() call on a PaymentIntent in this state,
+            // so report the success that already happened instead of erroring out a
+            // transaction that was, in fact, approved
+            $captured_payment_intent = $payment_intent;
+            $status = 'approved';
+        } else {
+            $captured_payment_intent = $this->handleApiRequest(
+                function ($payment_intent) {
+                    return $payment_intent->capture();
+                },
+                [$payment_intent],
+                $this->base_url . 'payment_intent - capture'
+            );
 
-        $status = 'error';
-        if (isset($captured_payment_intent->status)) {
-            switch ($captured_payment_intent->status) {
-                case 'requires_confirmation':
-                case 'requires_action':
-                case 'requires_source_action':
-                case 'processing':
-                    $status = 'pending';
-                    break;
-                case 'canceled':
-                case 'requires_payment_method':
-                    $status = 'declined';
-                    break;
-                case 'succeeded':
-                    $status = 'approved';
-                    break;
-                case 'requires_source':
-                default:
-                    $message =
-                        isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
-                            '';
+            $status = 'error';
+            if (isset($captured_payment_intent->status)) {
+                switch ($captured_payment_intent->status) {
+                    case 'requires_confirmation':
+                    case 'requires_action':
+                    case 'requires_source_action':
+                    case 'processing':
+                        $status = 'pending';
+                        break;
+                    case 'canceled':
+                    case 'requires_payment_method':
+                        $status = 'declined';
+                        break;
+                    case 'succeeded':
+                        $status = 'approved';
+                        break;
+                    case 'requires_source':
+                    default:
+                        $message =
+                            isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
+                                '';
+                }
             }
         }
 
