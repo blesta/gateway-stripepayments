@@ -86,7 +86,7 @@
                 }
 
                 // Create a Stripe client
-                var stripe_ach = Stripe('<?php echo (isset($meta['publishable_key']) ? $this->Html->safe($meta['publishable_key']) : null);?>');
+                var stripe_ach = Stripe('<?php echo (isset($publishable_key) ? $this->Html->safe($publishable_key) : null);?>');
                 var setup_secret = '<?php echo (isset($setup_intent->client_secret) ? $this->Html->safe($setup_intent->client_secret) : null);?>';
                 var billing_email = '<?php echo $this->Html->safe($billing_email ?? '');?>';
 
