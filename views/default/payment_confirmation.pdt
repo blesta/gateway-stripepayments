@@ -40,19 +40,19 @@
                     }
                 }
 
+                function disableFormSubmission() {
+                    form.querySelectorAll('input[type="submit"], button[type="submit"]').forEach(function (btn) {
+                        btn.disabled = true;
+                        btn.classList.add('disabled');
+                    });
+                }
+
                 // Bind natively for themes without jQuery, and through jQuery for callers that submit
                 // with jQuery's trigger, which calls form.submit() and so dispatches no submit event
                 function bindSubmit() {
                     form.addEventListener('submit', submitPayment);
                     if (window.jQuery) {
                         window.jQuery(form).on('submit', submitPayment);
-                    }
-                }
-
-                function unbindSubmit() {
-                    form.removeEventListener('submit', submitPayment);
-                    if (window.jQuery) {
-                        window.jQuery(form).off('submit', submitPayment);
                     }
                 }
 
@@ -86,9 +86,11 @@
                         '<?php echo (isset($payment_intent->client_secret) ? $this->Html->safe($payment_intent->client_secret) : null);?>',
                         {payment_method: '<?php echo (isset($payment_intent->payment_method) ? $this->Html->safe($payment_intent->payment_method) : null);?>'}
                     ).then(function (result) {
-                        // Resubmit the form, bypassing this handler
-                        unbindSubmit();
-                        enableFormSubmission();
+                        // Post the form to capture the payment. The native submit() dispatches no submit
+                        // event, so it bypasses this handler, which stays bound with the form disabled to
+                        // cancel any further submit while the capture is in flight. Posting the form again
+                        // would capture the same PaymentIntent a second time
+                        disableFormSubmission();
                         form.submit();
                     }, function () {
                         // Stripe.js failed outright (e.g. network error), so no confirmation was
