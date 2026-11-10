@@ -1178,7 +1178,9 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         } else {
             $captured_payment_intent = $this->handleApiRequest(
                 function ($payment_intent) {
-                    return $payment_intent->capture();
+                    // A PaymentIntent is captured once, so a duplicate request that reaches Stripe while
+                    // the first is still in flight gets that capture's result instead of an error
+                    return $payment_intent->capture(null, ['idempotency_key' => 'capture_' . $payment_intent->id]);
                 },
                 [$payment_intent],
                 $this->base_url . 'payment_intent - capture'
