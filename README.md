@@ -28,9 +28,82 @@ your Blesta installation path.
 
 5. You're done!
 
+## Connecting Stripe with OAuth (Stripe Connect)
+
+As of v2.1.0 (Blesta 6.0+), the recommended way to configure the gateway is to connect
+your Stripe account directly instead of copying API keys:
+
+1. Navigate to
+> Settings > Payment Gateways > Stripe Payments
+
+2. Click **Connect with Stripe** and complete the authorization on Stripe's site. To use
+a sandbox, choose **Set up in sandbox/test mode instead**.
+
+3. On return, the gateway shows the connected Stripe account with a Live or Test badge.
+Credentials are managed automatically from then on — there are no keys to copy or rotate.
+
+If you prefer API keys, expand **Use API keys instead** and enter your publishable and
+secret keys as before.
+
+### Switching an existing gateway to Stripe Connect
+
+A gateway already configured with API keys shows a **Switch to Stripe Connect** button.
+The conversion only completes when the Stripe account you authorize is the same account
+your existing secret key points at (and in the same live/test mode); otherwise it is
+refused and nothing changes. On success the stored API keys are removed and your clients'
+saved payment methods continue to work unchanged.
+
+**Switch to Stripe Connect** never changes the Stripe account: authorizing a different
+account there is refused and the gateway keeps running on its API keys. Gateways
+configured with a restricted key (`rk_...`) cannot be converted in place.
+
+### Connecting a different Stripe account
+
+To move a gateway that uses API keys to another Stripe account (or to connect one that uses
+a restricted key), click **Use a Different Account** and confirm. Whichever account you
+authorize is connected, in the same live/test mode as the stored keys, and the stored API
+keys are removed.
+
+Saved cards, bank accounts and Stripe customers belong to the Stripe account they were
+created in, so after connecting a different account, charging them and refunding earlier
+payments will fail and clients will need to add their payment methods again. The
+confirmation shows how many saved payment methods are affected. To return to the original
+account, use **Reconnect** and choose it; its saved payment methods work again.
+
+### Reconnecting
+
+A connected gateway offers **Reconnect**, which sends you to Stripe to authorize again, in
+live mode by default (choose **Use test mode** in the dialog for a sandbox). Use it to move a
+test-mode gateway to live or to connect a different Stripe account. The current connection
+keeps working until the new authorization completes; if you abandon it or it's refused,
+nothing changes. Once the new connection is saved, the previous one is disconnected at
+Stripe, unless it was the same account in the same mode.
+
+If disconnecting the previous account fails, the gateway settings show a warning naming
+that account with a **Retry** button. Blesta also retries automatically on the next
+reconnect or disconnect. You can instead remove the connection from your Stripe dashboard.
+
+Saved payment methods only work with the Stripe account, and the mode, they were created
+in.
+
+### Disconnecting and revoking
+
+**Disconnect** revokes Blesta's access to your Stripe account and leaves the gateway
+unconfigured — it does not fall back to previously stored API keys. Your clients' saved
+payment methods remain in your Stripe account and resolve again if you reconnect to the
+same account. You can also revoke access from the Stripe dashboard; the gateway discovers
+this on its next API call and returns to the unconfigured state.
+
+### Webhook setup is unchanged
+
+Webhooks are not affected by how the gateway authenticates. Configure the webhook URL
+shown on the gateway settings page in your own Stripe account for "payment_intent" and
+"charge" events, exactly as before.
+
 ### Blesta Compatibility
 
 |Blesta Version|Module Version|
 |--------------|--------------|
 |< v4.9.0|v1.1.0|
 |>= v4.9.0|v1.2.0|
+|>= v6.0.0|v2.1.0|
