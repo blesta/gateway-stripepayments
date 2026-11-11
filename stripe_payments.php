@@ -1738,10 +1738,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $success = true;
         }
 
-        // Log data sent to the gateway
+        // Log data sent to the gateway. Stripe objects passed as parameters carry their request
+        // options, including the secret API key, so reduce them to their plain data first
         $this->log(
             $url,
-            serialize($this->maskTokenStrings($params)),
+            serialize($this->stripeObjectsToArrays($params)),
             'input',
             (isset($params['error']) ? false : true)
         );
@@ -1772,6 +1773,28 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         if (is_string($data)) {
             return preg_replace('/\b(sk|rk)_[A-Za-z0-9_]+/', '**masked**', $data);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Recursively converts any Stripe objects into arrays of their data, dropping the request
+     * options (e.g. the API key) that serializing the objects directly would expose
+     *
+     * @param mixed $data The data to convert
+     * @return mixed The data with all Stripe objects converted to arrays
+     */
+    private function stripeObjectsToArrays($data)
+    {
+        if ($data instanceof \Stripe\StripeObject) {
+            return $data->toArray();
+        }
+
+        if (is_array($data)) {
+            foreach ($data as $key => $value) {
+                $data[$key] = $this->stripeObjectsToArrays($value);
+            }
         }
 
         return $data;
