@@ -2,7 +2,8 @@
 
 use PHPUnit\Framework\TestCase;
 
-// The stubbed PaymentIntent below extends the bundled SDK's, which the gateway otherwise loads on first use
+// The recording HTTP client below implements the bundled SDK's interface, which the gateway
+// otherwise loads on first use
 require_once dirname(__DIR__, 2) . DS . 'vendor' . DS . 'stripe' . DS . 'stripe-php' . DS . 'init.php';
 
 /**
@@ -22,6 +23,14 @@ class StripePaymentsCaptureTest extends TestCase
     {
         $this->http = new CaptureRecordingHttpClient();
         \Stripe\ApiRequestor::setHttpClient($this->http);
+    }
+
+    /**
+     * Restores the SDK's default HTTP client, so later tests do not inherit the canned one
+     */
+    protected function tearDown(): void
+    {
+        \Stripe\ApiRequestor::setHttpClient(null);
     }
 
     /**
@@ -80,19 +89,63 @@ class StripePaymentsCaptureTest extends TestCase
 
         $response = $this->gateway()->captureStoredCc(null, null, 'pi_123', null, 25.00);
 
-        $this->assertSame('capture_pi_123', $this->http->headerOf('/v1/payment_intents/pi_123/capture', 'Idempotency-Key'));
+        $this->assertSame(
+            'capture_pi_123',
+            $this->http->headerOf('/v1/payment_intents/pi_123/capture', 'Idempotency-Key')
+        );
         $this->assertSame('approved', $response['status']);
         $this->assertSame('pi_123', $response['reference_id']);
         $this->assertSame('ch_123', $response['transaction_id']);
     }
 
+    /**
+     * A duplicate sent while the first capture is still running gets a 409 from Stripe, so nothing is
+     * returned and the transaction is left for the first request to update
+     */
+    public function testCaptureStoredCcReturnsNothingWhileAnotherCaptureIsInProgress()
+    {
+        $this->queuePaymentIntent('requires_capture');
+        $this->http->respond('/v1/payment_intents/pi_123/capture', [
+            'error' => [
+                'type' => 'idempotency_error',
+                'message' => 'There is currently another in-progress request using this Stripe-Idempotency-Key.'
+            ]
+        ], 409);
+
+        $gateway = $this->gateway();
+        $response = $gateway->captureStoredCc(null, null, 'pi_123', null, 25.00);
+
+        $this->assertNull($response);
+        $this->assertSame(['common' => ['general' => 'general']], $gateway->errors());
+    }
+
+    /**
+     * Any other capture failure is still reported as an error, so the transaction records it
+     */
+    public function testCaptureStoredCcReportsOtherCaptureFailuresAsAnError()
+    {
+        $this->queuePaymentIntent('requires_capture');
+        $this->http->respond('/v1/payment_intents/pi_123/capture', [
+            'error' => ['type' => 'api_error', 'message' => 'An unknown error occurred']
+        ], 500);
+
+        $gateway = $this->gateway();
+        $response = $gateway->captureStoredCc(null, null, 'pi_123', null, 25.00);
+
+        $this->assertSame('error', $response['status']);
+        $this->assertSame(['common' => ['general' => 'general']], $gateway->errors());
+    }
+
+    /**
+     * A PaymentIntent that an earlier request already captured is reported as approved, since Stripe
+     * would reject capturing it again
+     */
     public function testCaptureStoredCcReportsAnAlreadyCapturedPaymentIntentWithoutCapturingAgain()
     {
         $this->queuePaymentIntent('succeeded');
 
         $response = $this->gateway()->captureStoredCc(null, null, 'pi_123', null, 25.00);
 
-        $this->assertNull($this->http->headerOf('/v1/payment_intents/pi_123/capture', 'Idempotency-Key'));
         $this->assertFalse($this->http->requested('/v1/payment_intents/pi_123/capture'));
         $this->assertSame('approved', $response['status']);
         $this->assertSame('ch_123', $response['transaction_id']);
@@ -105,7 +158,7 @@ class StripePaymentsCaptureTest extends TestCase
 class CaptureRecordingHttpClient implements \Stripe\HttpClient\ClientInterface
 {
     /**
-     * @var array The canned response bodies, by request path
+     * @var array The canned response bodies and HTTP statuses, by request path
      */
     private $responses = [];
 
@@ -117,10 +170,11 @@ class CaptureRecordingHttpClient implements \Stripe\HttpClient\ClientInterface
     /**
      * @param string $path The request path
      * @param array $body The response body
+     * @param int $status The HTTP status
      */
-    public function respond($path, array $body)
+    public function respond($path, array $body, $status = 200)
     {
-        $this->responses[$path] = json_encode($body);
+        $this->responses[$path] = [json_encode($body), $status];
     }
 
     /**
@@ -165,7 +219,8 @@ class CaptureRecordingHttpClient implements \Stripe\HttpClient\ClientInterface
     {
         $path = parse_url($absUrl, PHP_URL_PATH);
         $this->requests[] = ['path' => $path, 'headers' => $headers];
+        list($body, $status) = $this->responses[$path] ?? ['{}', 404];
 
-        return [$this->responses[$path] ?? '{}', isset($this->responses[$path]) ? 200 : 404, []];
+        return [$body, $status, []];
     }
 }

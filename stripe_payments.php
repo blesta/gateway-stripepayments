@@ -1176,15 +1176,32 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $captured_payment_intent = $payment_intent;
             $status = 'approved';
         } else {
+            $capture_in_progress = false;
             $captured_payment_intent = $this->handleApiRequest(
-                function ($payment_intent) {
-                    // A PaymentIntent is captured once, so a duplicate request that reaches Stripe while
-                    // the first is still in flight gets that capture's result instead of an error
-                    return $payment_intent->capture(null, ['idempotency_key' => 'capture_' . $payment_intent->id]);
+                function ($payment_intent) use (&$capture_in_progress) {
+                    // A PaymentIntent is captured once, so every capture request for it shares one
+                    // idempotency key. A duplicate sent after the first capture finished gets that
+                    // capture's result replayed, and one sent while the first is still running gets
+                    // a 409 conflict
+                    try {
+                        return $payment_intent->capture(
+                            null,
+                            ['idempotency_key' => 'capture_' . $payment_intent->id]
+                        );
+                    } catch (\Stripe\Exception\ApiErrorException $e) {
+                        $capture_in_progress = ($e->getHttpStatus() === 409);
+                        throw $e;
+                    }
                 },
                 [$payment_intent],
                 $this->base_url . 'payment_intent - capture'
             );
+
+            // Another request is still capturing this PaymentIntent, so return nothing and leave the
+            // transaction for that request to update
+            if ($capture_in_progress) {
+                return;
+            }
 
             $status = 'error';
             if (isset($captured_payment_intent->status)) {

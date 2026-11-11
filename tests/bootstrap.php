@@ -3,13 +3,14 @@
  * Test bootstrap.
  *
  * This repository ships without the Blesta framework, so the framework symbols the
- * gateway touches are stood in for here, guarded so the suite also runs unchanged when
- * the repo is checked out inside a Blesta install whose autoloader defines the real
- * ones first. The Stripe SDK is the real bundled one; no test makes a network call.
+ * gateway touches are stood in for here. The guards skip autoloading, so the stubs are
+ * used even when the suite runs inside a Blesta install whose autoloader could load the
+ * real classes, which need a bootstrapped framework. The Stripe SDK is the real bundled
+ * one; no test makes a network call.
  */
 
 namespace Blesta\Core\Util\Oauth {
-    if (!interface_exists('Blesta\Core\Util\Oauth\CentralizedOauthExtension')) {
+    if (!interface_exists('Blesta\Core\Util\Oauth\CentralizedOauthExtension', false)) {
         interface CentralizedOauthExtension
         {
             public function getOauthProvider(): string;
@@ -20,7 +21,7 @@ namespace Blesta\Core\Util\Oauth {
         }
     }
 
-    if (!class_exists('Blesta\Core\Util\Oauth\OauthTokenRejectedException')) {
+    if (!class_exists('Blesta\Core\Util\Oauth\OauthTokenRejectedException', false)) {
         class OauthTokenRejectedException extends \Exception
         {
         }
@@ -32,7 +33,7 @@ namespace {
         define('DS', DIRECTORY_SEPARATOR);
     }
 
-    if (!class_exists('Loader')) {
+    if (!class_exists('Loader', false)) {
         class Loader
         {
             public static function load($file)
@@ -64,7 +65,7 @@ namespace {
         }
     }
 
-    if (!class_exists('Input')) {
+    if (!class_exists('Input', false)) {
         class Input
         {
             private $errors = [];
@@ -90,7 +91,7 @@ namespace {
         }
     }
 
-    if (!class_exists('Language')) {
+    if (!class_exists('Language', false)) {
         class Language
         {
             public static function loadLang($file, $language = null, $dir = null)
@@ -108,7 +109,7 @@ namespace {
         }
     }
 
-    if (!class_exists('Configure')) {
+    if (!class_exists('Configure', false)) {
         class Configure
         {
             private static $data = [];
@@ -129,7 +130,7 @@ namespace {
         }
     }
 
-    if (!class_exists('MerchantGateway')) {
+    if (!class_exists('MerchantGateway', false)) {
         #[\AllowDynamicProperties]
         abstract class MerchantGateway
         {
@@ -157,7 +158,9 @@ namespace {
 
             public function getVersion()
             {
-                return '2.1.0';
+                $config = json_decode(file_get_contents(dirname(__DIR__) . DS . 'config.json'), true);
+
+                return ($config['version'] ?? null);
             }
 
             protected function loadConfig($file)
@@ -196,7 +199,7 @@ namespace {
 
     foreach (['MerchantAch', 'MerchantAchOffsite', 'MerchantAchVerification', 'MerchantAchStatus', 'MerchantAchForm',
         'MerchantCc', 'MerchantCcOffsite', 'MerchantCcForm', 'MerchantCcAuthorization'] as $merchant_interface) {
-        if (!interface_exists($merchant_interface)) {
+        if (!interface_exists($merchant_interface, false)) {
             eval('interface ' . $merchant_interface . ' {}');
         }
     }
