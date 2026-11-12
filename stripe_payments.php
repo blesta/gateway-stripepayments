@@ -1200,6 +1200,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             // Another request is still capturing this PaymentIntent, so return nothing and leave the
             // transaction for that request to update
             if ($capture_in_progress) {
+                // An empty return in this context means that GatewayPayments should not log or process
+                // the operation further, but report any stored errors immediately.
                 return;
             }
 
