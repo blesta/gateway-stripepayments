@@ -64,11 +64,14 @@ class StripePaymentsCaptureTest extends TestCase
     }
 
     /**
-     * @return StripePayments The gateway
+     * @return StripePayments The gateway, connected with an API key rather than through OAuth
      */
     private function gateway()
     {
-        $gateway = new StripePayments();
+        $gateway = $this->getMockBuilder(StripePayments::class)
+            ->onlyMethods(['getEnrollment'])
+            ->getMock();
+        $gateway->method('getEnrollment')->willReturn(['connected' => false, 'pending' => false]);
         $gateway->setMeta(['secret_key' => 'sk_test_123']);
         $gateway->Session = new class {
             public function write($key, $value)
