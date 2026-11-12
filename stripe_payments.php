@@ -1569,35 +1569,66 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             ];
         }
 
-        $captured_payment_intent = $this->handleApiRequest(
-            function ($payment_intent) {
-                return $payment_intent->capture();
-            },
-            [$payment_intent],
-            $this->base_url . 'payment_intent - capture'
-        );
+        if ($payment_intent->status === 'succeeded') {
+            // Already captured, most likely by an earlier request that reached the gateway
+            // while this duplicate was still in flight (e.g. a resubmitted confirmation).
+            // Stripe would reject a second capture() call on a PaymentIntent in this state,
+            // so report the success that already happened instead of erroring out a
+            // transaction that was, in fact, approved
+            $captured_payment_intent = $payment_intent;
+            $status = 'approved';
+        } else {
+            $capture_in_progress = false;
+            $captured_payment_intent = $this->handleApiRequest(
+                function ($payment_intent) use (&$capture_in_progress) {
+                    // A PaymentIntent is captured once, so every capture request for it shares one
+                    // idempotency key. A duplicate sent after the first capture finished gets that
+                    // capture's result replayed, and one sent while the first is still running gets
+                    // a 409 conflict
+                    try {
+                        return $payment_intent->capture(
+                            null,
+                            ['idempotency_key' => 'capture_' . $payment_intent->id]
+                        );
+                    } catch (\Stripe\Exception\ApiErrorException $e) {
+                        $capture_in_progress = ($e->getHttpStatus() === 409);
+                        throw $e;
+                    }
+                },
+                [$payment_intent],
+                $this->base_url . 'payment_intent - capture'
+            );
 
-        $status = 'error';
-        if (isset($captured_payment_intent->status)) {
-            switch ($captured_payment_intent->status) {
-                case 'requires_confirmation':
-                case 'requires_action':
-                case 'requires_source_action':
-                case 'processing':
-                    $status = 'pending';
-                    break;
-                case 'canceled':
-                case 'requires_payment_method':
-                    $status = 'declined';
-                    break;
-                case 'succeeded':
-                    $status = 'approved';
-                    break;
-                case 'requires_source':
-                default:
-                    $message =
-                        isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
-                            '';
+            // Another request is still capturing this PaymentIntent, so return nothing and leave the
+            // transaction for that request to update
+            if ($capture_in_progress) {
+                // An empty return in this context means that GatewayPayments should not log or process
+                // the operation further, but report any stored errors immediately.
+                return;
+            }
+
+            $status = 'error';
+            if (isset($captured_payment_intent->status)) {
+                switch ($captured_payment_intent->status) {
+                    case 'requires_confirmation':
+                    case 'requires_action':
+                    case 'requires_source_action':
+                    case 'processing':
+                        $status = 'pending';
+                        break;
+                    case 'canceled':
+                    case 'requires_payment_method':
+                        $status = 'declined';
+                        break;
+                    case 'succeeded':
+                        $status = 'approved';
+                        break;
+                    case 'requires_source':
+                    default:
+                        $message =
+                            isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
+                                '';
+                }
             }
         }
 
