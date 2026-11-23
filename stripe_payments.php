@@ -964,8 +964,13 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         }
 
         // Cancel the PaymentIntent if it was never captured. A webhook may have already recorded the ID of an
-        // authorization's uncaptured Charge, so having a Charge ID does not mean it was captured
-        if ($reference_id && (!$transaction_id || ($payment_intent->status ?? null) == 'requires_capture')) {
+        // authorization's uncaptured Charge, or of a Charge that failed before the client finished approving
+        // the payment, so having a Charge ID does not mean it was captured. Such a Charge can not be refunded
+        $uncaptured = in_array(
+            ($payment_intent->status ?? null),
+            ['requires_capture', 'requires_action', 'requires_confirmation', 'requires_payment_method']
+        );
+        if ($reference_id && (!$transaction_id || $uncaptured)) {
             // Cancel the PaymentIntent
             $this->handleApiRequest(
                 function ($payment_intent) {
@@ -1556,6 +1561,12 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'payment_intents - retrieve'
         );
 
+        // Without the PaymentIntent nothing is known of the authorization, so report no outcome and
+        // leave it awaiting capture
+        if ($this->Input->errors()) {
+            return;
+        }
+
         $latest_charge = $this->handleApiRequest(
             ['Stripe\Charge', 'retrieve'],
             [$payment_intent->latest_charge],
@@ -1591,6 +1602,18 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
                 [$payment_intent, $capture],
                 $this->base_url . 'payment_intent - capture'
             );
+
+            // Only Stripe refusing the capture is an outcome. Any other failure, such as Stripe being
+            // unreachable, leaves it unknown whether the authorization was captured, so report no outcome
+            // and leave it awaiting capture rather than recording an error it can not be retried from
+            $error = ($captured_payment_intent->error ?? null);
+            $refused = in_array(
+                (is_array($error) ? ($error['type'] ?? null) : null),
+                ['card_error', 'invalid_request_error']
+            );
+            if ($this->Input->errors() && !$refused) {
+                return;
+            }
         }
 
         $status = 'error';

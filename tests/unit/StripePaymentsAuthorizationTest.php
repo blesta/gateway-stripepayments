@@ -192,6 +192,50 @@ class StripePaymentsAuthorizationTest extends TestCase
     }
 
     /**
+     * A capture that failed without Stripe refusing it, such as when Stripe could not be reached, has no
+     * known outcome, so none is reported and the authorization is left awaiting capture
+     */
+    public function testCaptureStoredCcReportsNoOutcomeWhenTheCaptureCouldNotBeSent()
+    {
+        $payment_intent = $this->paymentIntent(['status' => 'requires_capture', 'amount_capturable' => 2500]);
+        $gateway = $this->gateway([$payment_intent, $this->charge(), new \RuntimeException('Connection timed out')]);
+
+        $this->assertNull($gateway->captureStoredCc(null, null, 'pi_123', null, 25.00));
+        $this->assertNotFalse($gateway->errors());
+    }
+
+    public function testCaptureStoredCcReportsNoOutcomeWhenThePaymentIntentCouldNotBeRetrieved()
+    {
+        $gateway = $this->gateway([new \RuntimeException('Connection timed out')]);
+
+        $this->assertNull($gateway->captureStoredCc(null, null, 'pi_123', null, 25.00));
+        $this->assertNotFalse($gateway->errors());
+    }
+
+    /**
+     * Stripe refusing the capture is an outcome, and is still reported
+     */
+    public function testCaptureStoredCcReportsACaptureStripeRefused()
+    {
+        $payment_intent = $this->paymentIntent(['status' => 'requires_capture', 'amount_capturable' => 2500]);
+        $gateway = $this->gateway([
+            $payment_intent,
+            $this->charge(),
+            \Stripe\Exception\InvalidRequestException::factory(
+                'This PaymentIntent could not be captured',
+                400,
+                null,
+                ['error' => ['type' => 'invalid_request_error', 'message' => 'This PaymentIntent could not be captured']]
+            )
+        ]);
+
+        $response = $gateway->captureStoredCc(null, null, 'pi_123', null, 25.00);
+
+        $this->assertSame('error', $response['status']);
+        $this->assertNotFalse($gateway->errors());
+    }
+
+    /**
      * A webhook may have recorded the uncaptured Charge's ID, which must not turn the void into a refund
      */
     public function testVoidTransactionCancelsAnUncapturedAuthorizationWithAChargeId()
@@ -203,6 +247,28 @@ class StripePaymentsAuthorizationTest extends TestCase
 
         $this->assertTrue($payment_intent->canceled);
         $this->assertSame('void', $response['status']);
+    }
+
+    /**
+     * A Charge ID may also be recorded for an authorization the client never finished approving, which
+     * has nothing to refund
+     *
+     * @dataProvider incompleteStatusProvider
+     */
+    public function testVoidTransactionCancelsAnIncompleteAuthorizationWithAChargeId($stripe_status)
+    {
+        $payment_intent = $this->paymentIntent(['status' => $stripe_status]);
+        $gateway = $this->gateway([$payment_intent]);
+
+        $response = $gateway->voidTransaction('pi_123', 'ch_123');
+
+        $this->assertTrue($payment_intent->canceled);
+        $this->assertSame('void', $response['status']);
+    }
+
+    public function incompleteStatusProvider()
+    {
+        return [['requires_action'], ['requires_confirmation'], ['requires_payment_method']];
     }
 
     public function testVoidTransactionCancelsAnAuthorizationWithoutAChargeId()
