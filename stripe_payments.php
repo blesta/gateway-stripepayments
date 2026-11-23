@@ -15,7 +15,7 @@ use Blesta\Core\Util\Oauth\OauthTokenRejectedException;
  * @license http://www.blesta.com/license/ The Blesta License Agreement
  * @link http://www.blesta.com/ Blesta
  */
-class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchStatus, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm, CentralizedOauthExtension
+class StripePayments extends MerchantGateway implements MerchantAch, MerchantAchOffsite, MerchantAchVerification, MerchantAchStatus, MerchantAchForm, MerchantCc, MerchantCcOffsite, MerchantCcForm, MerchantCcAuthorization, CentralizedOauthExtension
 {
     /**
      * @var array An array of meta data for this gateway
@@ -950,8 +950,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
      */
     public function voidTransaction($reference_id, $transaction_id)
     {
-        // Cancel the PaymentIntent if we don't have a Charge ID yet
-        if ($reference_id && !$transaction_id) {
+        if ($reference_id) {
             $payment_intent = $this->handleApiRequest(
                 ['Stripe\PaymentIntent', 'retrieve'],
                 [$reference_id],
@@ -962,7 +961,16 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             if ($this->Input->errors()) {
                 return;
             }
+        }
 
+        // Cancel the PaymentIntent if it was never captured. A webhook may have already recorded the ID of an
+        // authorization's uncaptured Charge, or of a Charge that failed before the client finished approving
+        // the payment, so having a Charge ID does not mean it was captured. Such a Charge can not be refunded
+        $uncaptured = in_array(
+            ($payment_intent->status ?? null),
+            ['requires_capture', 'requires_action', 'requires_confirmation', 'requires_payment_method']
+        );
+        if ($reference_id && (!$transaction_id || $uncaptured)) {
             // Cancel the PaymentIntent
             $this->handleApiRequest(
                 function ($payment_intent) {
@@ -1553,6 +1561,12 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $this->base_url . 'payment_intents - retrieve'
         );
 
+        // Without the PaymentIntent nothing is known of the authorization, so report no outcome and
+        // leave it awaiting capture
+        if ($this->Input->errors()) {
+            return;
+        }
+
         $latest_charge = $this->handleApiRequest(
             ['Stripe\Charge', 'retrieve'],
             [$payment_intent->latest_charge],
@@ -1569,35 +1583,38 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             ];
         }
 
-        if ($payment_intent->status === 'succeeded') {
-            // Already captured, most likely by an earlier request that reached the gateway
-            // while this duplicate was still in flight (e.g. a resubmitted confirmation).
-            // Stripe would reject a second capture() call on a PaymentIntent in this state,
-            // so report the success that already happened instead of erroring out a
-            // transaction that was, in fact, approved
+        // A PaymentIntent already captured, such as by a capture whose response never reached us, is
+        // reported as it is rather than captured again
+        if (($payment_intent->status ?? null) == 'succeeded') {
             $captured_payment_intent = $payment_intent;
-            $status = 'approved';
         } else {
-            $capture_in_progress = false;
+            // Capture only the amount given when it is less than the amount authorized, releasing the rest
+            $capture = [];
+            $amount_to_capture = $this->formatAmount($amount, ($this->currency ?? null));
+            if ($amount_to_capture > 0 && $amount_to_capture < ($payment_intent->amount_capturable ?? 0)) {
+                $capture['amount_to_capture'] = $amount_to_capture;
+            }
+
             $captured_payment_intent = $this->handleApiRequest(
-                function ($payment_intent) use (&$capture_in_progress) {
-                    // A PaymentIntent is captured once, so every capture request for it shares one
-                    // idempotency key. A duplicate sent after the first capture finished gets that
-                    // capture's result replayed, and one sent while the first is still running gets
-                    // a 409 conflict
-                    try {
-                        return $payment_intent->capture(
-                            null,
-                            ['idempotency_key' => 'capture_' . $payment_intent->id]
-                        );
-                    } catch (\Stripe\Exception\ApiErrorException $e) {
-                        $capture_in_progress = ($e->getHttpStatus() === 409);
-                        throw $e;
-                    }
+                function ($payment_intent, $capture) {
+                    return $payment_intent->capture($capture);
                 },
-                [$payment_intent],
+                [$payment_intent, $capture],
                 $this->base_url . 'payment_intent - capture'
             );
+
+            // Only Stripe refusing the capture is an outcome. Any other failure, such as Stripe being
+            // unreachable, leaves it unknown whether the authorization was captured, so report no outcome
+            // and leave it awaiting capture rather than recording an error it can not be retried from
+            $error = ($captured_payment_intent->error ?? null);
+            $refused = in_array(
+                (is_array($error) ? ($error['type'] ?? null) : null),
+                ['card_error', 'invalid_request_error']
+            );
+            if ($this->Input->errors() && !$refused) {
+                return;
+            }
+        }
 
             // Another request is still capturing this PaymentIntent, so return nothing and leave the
             // transaction for that request to update
@@ -1654,6 +1671,54 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'transaction_id' => ($captured_payment_intent->latest_charge ?? null),
             'message' => ($message ?? null),
             'invoices' => $this->parseInvoiceAmounts($captured_payment_intent->metadata->invoices ?? '')
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getCcAuthorization($reference_id, $transaction_id)
+    {
+        $payment_intent = $this->handleApiRequest(
+            ['Stripe\PaymentIntent', 'retrieve'],
+            [$reference_id],
+            $this->base_url . 'payment_intents - retrieve'
+        );
+
+        // Only a PaymentIntent created to be captured later is an authorization. Others, such as an India
+        // eMandate charge awaiting the client's approval, are captured by Stripe and must be left alone
+        if ($this->Input->errors() || ($payment_intent->capture_method ?? null) != 'manual') {
+            return null;
+        }
+
+        switch ($payment_intent->status ?? null) {
+            case 'requires_capture':
+                $status = 'capturable';
+                $amount = $payment_intent->amount_capturable;
+                break;
+            case 'succeeded':
+                $status = 'captured';
+                $amount = $payment_intent->amount_received;
+                break;
+            case 'canceled':
+                $status = 'canceled';
+                $amount = 0;
+                break;
+            case 'requires_payment_method':
+            case 'requires_confirmation':
+            case 'requires_action':
+                $status = 'incomplete';
+                $amount = 0;
+                break;
+            default:
+                // Still processing, so check again later
+                return null;
+        }
+
+        return [
+            'status' => $status,
+            'amount' => $this->formatAmount($amount, strtoupper($payment_intent->currency ?? ''), 'from'),
+            'invoices' => $this->parseInvoiceAmounts($payment_intent->metadata->invoices ?? '')
         ];
     }
 
