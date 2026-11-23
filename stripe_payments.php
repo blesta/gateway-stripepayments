@@ -1616,27 +1616,36 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             }
         }
 
-        $status = 'error';
-        if (isset($captured_payment_intent->status)) {
-            switch ($captured_payment_intent->status) {
-                case 'requires_confirmation':
-                case 'requires_action':
-                case 'requires_source_action':
-                case 'processing':
-                    $status = 'pending';
-                    break;
-                case 'canceled':
-                case 'requires_payment_method':
-                    $status = 'declined';
-                    break;
-                case 'succeeded':
-                    $status = 'approved';
-                    break;
-                case 'requires_source':
-                default:
-                    $message =
-                        isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
-                            '';
+            // Another request is still capturing this PaymentIntent, so return nothing and leave the
+            // transaction for that request to update
+            if ($capture_in_progress) {
+                // An empty return in this context means that GatewayPayments should not log or process
+                // the operation further, but report any stored errors immediately.
+                return;
+            }
+
+            $status = 'error';
+            if (isset($captured_payment_intent->status)) {
+                switch ($captured_payment_intent->status) {
+                    case 'requires_confirmation':
+                    case 'requires_action':
+                    case 'requires_source_action':
+                    case 'processing':
+                        $status = 'pending';
+                        break;
+                    case 'canceled':
+                    case 'requires_payment_method':
+                        $status = 'declined';
+                        break;
+                    case 'succeeded':
+                        $status = 'approved';
+                        break;
+                    case 'requires_source':
+                    default:
+                        $message =
+                            isset($captured_payment_intent->error) ? ($captured_payment_intent->error->message ?? null) :
+                                '';
+                }
             }
         }
 
@@ -1825,10 +1834,11 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             $success = true;
         }
 
-        // Log data sent to the gateway
+        // Log data sent to the gateway. Stripe objects passed as parameters carry their request
+        // options, including the secret API key, so reduce them to their plain data first
         $this->log(
             $url,
-            serialize($this->maskTokenStrings($params)),
+            serialize($this->stripeObjectsToArrays($params)),
             'input',
             (isset($params['error']) ? false : true)
         );
@@ -1859,6 +1869,28 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
 
         if (is_string($data)) {
             return preg_replace('/\b(sk|rk)_[A-Za-z0-9_]+/', '**masked**', $data);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Recursively converts any Stripe objects into arrays of their data, dropping the request
+     * options (e.g. the API key) that serializing the objects directly would expose
+     *
+     * @param mixed $data The data to convert
+     * @return mixed The data with all Stripe objects converted to arrays
+     */
+    private function stripeObjectsToArrays($data)
+    {
+        if ($data instanceof \Stripe\StripeObject) {
+            return $data->toArray();
+        }
+
+        if (is_array($data)) {
+            foreach ($data as $key => $value) {
+                $data[$key] = $this->stripeObjectsToArrays($value);
+            }
         }
 
         return $data;
