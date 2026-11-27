@@ -44,6 +44,7 @@ class StripePaymentsCaptureTest extends TestCase
             'id' => 'pi_123',
             'object' => 'payment_intent',
             'status' => $status,
+            'client_secret' => 'pi_123_secret_456',
             'latest_charge' => 'ch_123',
             'metadata' => ['invoices' => '']
         ]);
@@ -58,6 +59,7 @@ class StripePaymentsCaptureTest extends TestCase
             'id' => 'pi_123',
             'object' => 'payment_intent',
             'status' => 'succeeded',
+            'client_secret' => 'pi_123_secret_456',
             'latest_charge' => 'ch_123',
             'metadata' => ['invoices' => '']
         ]);
@@ -149,6 +151,21 @@ class StripePaymentsCaptureTest extends TestCase
         $this->assertFalse($this->http->requested('/v1/payment_intents/pi_123/capture'));
         $this->assertSame('approved', $response['status']);
         $this->assertSame('ch_123', $response['transaction_id']);
+    }
+
+    /**
+     * The PaymentIntent's client secret must not be logged, neither from the responses that return it
+     * nor from the capture request that is given the PaymentIntent
+     */
+    public function testCaptureStoredCcDoesNotLogTheClientSecret()
+    {
+        $this->queuePaymentIntent('requires_capture');
+
+        $gateway = $this->gateway();
+        $gateway->captureStoredCc(null, null, 'pi_123', null, 25.00);
+
+        $this->assertNotEmpty($gateway->logs);
+        $this->assertStringNotContainsString('pi_123_secret_456', serialize($gateway->logs));
     }
 }
 
