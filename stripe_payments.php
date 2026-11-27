@@ -1197,7 +1197,8 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
             'number', // CC number
             'exp_month',
             'exp_year',
-            'cvc'
+            'cvc',
+            'client_secret' // PaymentIntent/SetupIntent client secret
         ];
 
         // Determine success or failure for the response
@@ -1210,7 +1211,7 @@ class StripePayments extends MerchantGateway implements MerchantAch, MerchantAch
         // options, including the secret API key, so reduce them to their plain data first
         $this->log(
             $url,
-            serialize($this->stripeObjectsToArrays($params)),
+            serialize($this->maskDataRecursive($this->stripeObjectsToArrays($params), $mask_fields)),
             'input',
             (isset($params['error']) ? false : true)
         );
